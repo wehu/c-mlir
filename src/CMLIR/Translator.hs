@@ -79,7 +79,8 @@ translateToMLIR tu =
      MLIR.registerAllDialects ctx
      nativeOp <- fromAST ctx (mempty, mempty) $ do
                    let res = runTrav initEnv $ do
-                              withExtDeclHandler (analyseAST tu) handlers
+                              modifyUserState (\s -> s{funDefs=[]})
+                              withExtDeclHandler (analyseAST tu) handleFDef
                               fs <- getUserState >>= mapM transFunction . funDefs
                               id <- freshName
                               return $ AST.ModuleOp $ AST.Block id [] fs
@@ -92,7 +93,7 @@ translateToMLIR tu =
      BU.toString <$> MLIR.showOperationWithLocation nativeOp)
 
 transFunction :: FunDef -> EnvM AST.Binding
-transFunction (FunDef var stmt node) = underScope $ do
+transFunction f@(FunDef var stmt node) = underScope $ do
   let (name, ty) = varDecl var
       args = over (traverse . _1) BU.fromString $ params var
   b <- transBlock args stmt
@@ -109,7 +110,16 @@ transBlock args s = unsupported s
 
 transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [AST.Binding]
 transBlockItem (CBlockStmt s) = transStmt s
+transBlockItem (CBlockDecl decl) = do
+  modifyUserState (\s -> s{objDefs=[]})
+  withExtDeclHandler (analyseDecl True decl) handleVDecl
+  getUserState >>= (\s -> join <$> mapM transLocalDecl (objDefs s))
 transBlockItem s = unsupported s
+
+transLocalDecl :: ObjDef -> EnvM [AST.Binding]
+transLocalDecl (ObjDef var init node) = do
+  let (n, v) = varDecl var
+  return []
 
 transStmt :: CStatement NodeInfo -> EnvM [AST.Binding]
 transStmt (CReturn Nothing node) =
@@ -152,30 +162,39 @@ transFloat (CFloat str) loc = do
 transStr :: CString -> AST.Location -> EnvM [AST.Binding]
 transStr s@(CString str _) loc = error "xxx"
 
-handlers :: DeclEvent -> EnvM ()
-handlers (TagEvent tagDef) = handleTag tagDef
-handlers (DeclEvent identDecl) = handleIdentDecl identDecl
-handlers (ParamEvent paramDecl) = handleParam paramDecl
-handlers (LocalEvent identDecl) = handleIdentDecl identDecl
-handlers (TypeDefEvent typeDef) = handleTypeDecl typeDef
-handlers (AsmEvent asmBlock) = handleAsm asmBlock
+-- handlers :: DeclEvent -> EnvM ()
+-- handlers e@(TagEvent tagDef) = handleTag e
+-- handlers (DeclEvent identDecl) = handleIdentDecl identDecl
+-- handlers e@(ParamEvent paramDecl) = handleParam e
+-- handlers (LocalEvent identDecl) = handleIdentDecl identDecl
+-- handlers (TypeDefEvent typeDef) = handleTypeDecl typeDef
+-- handlers (AsmEvent asmBlock) = handleAsm asmBlock
 
-handleTag :: Monad m => TagDef -> m ()
-handleTag (CompDef compT) = return ()
-handleTag (EnumDef enumT) = return ()
+handleTag :: DeclEvent -> EnvM ()
+handleTag (TagEvent (CompDef compT)) = return ()
+handleTag (TagEvent (EnumDef enumT)) = return ()
+handleTag _ = return ()
 
-handleIdentDecl :: IdentDecl -> Trav Env ()
-handleIdentDecl (Declaration decl) = modifyUserState (\s -> s{decls=decl : decls s})
-handleIdentDecl (ObjectDef objDef) = modifyUserState (\s -> s{objDefs=objDef : objDefs s})
-handleIdentDecl (FunctionDef funDef) = modifyUserState (\s -> s{funDefs=funDef : funDefs s})
-handleIdentDecl (EnumeratorDef enumerator) = modifyUserState (\s -> s{enumerators=enumerator : enumerators s})
+-- handleIdentDecl :: IdentDecl -> EnvM ()
+-- handleIdentDecl (Declaration decl) = modifyUserState (\s -> s{decls=decls s ++ [decl]})
+-- handleIdentDecl (ObjectDef objDef) = modifyUserState (\s -> s{objDefs=objDefs s ++ [objDef]})
+-- handleIdentDecl (FunctionDef funDef) = modifyUserState (\s -> s{funDefs=funDefs s ++ [funDef]})
+-- handleIdentDecl (EnumeratorDef enumerator) = modifyUserState (\s -> s{enumerators=enumerators s ++ [enumerator]})
 
-handleParam :: Monad m => ParamDecl -> m ()
-handleParam (ParamDecl varDecl _) = return ()
-handleParam (AbstractParamDecl varDecl _) = return ()
+handleFDef :: DeclEvent -> EnvM ()
+handleFDef (DeclEvent (FunctionDef funDef)) = modifyUserState (\s -> s{funDefs=funDefs s ++ [funDef]})
+handleFDef _ = return ()
 
-handleTypeDecl :: TypeDef -> Trav Env ()
-handleTypeDecl typeDef = modifyUserState (\s -> s{typeDefs=typeDef : typeDefs s})
+handleVDecl :: DeclEvent -> EnvM ()
+handleVDecl (LocalEvent (ObjectDef objDef)) = modifyUserState (\s -> s{objDefs=objDefs s ++ [objDef]})
+handleVDecl _ = return ()
+
+handleParam :: DeclEvent -> EnvM ()
+handleParam (ParamEvent p) = return ()
+handleParam _ = return ()
+
+handleTypeDecl :: TypeDef -> EnvM ()
+handleTypeDecl typeDef = modifyUserState (\s -> s{typeDefs=typeDefs s ++ [typeDef]})
 
 handleAsm :: Monad m => CStringLiteral a -> m ()
 handleAsm (CStrLit c n) = return ()
@@ -241,9 +260,9 @@ params (VarDecl name attr ty) = ps ty
         f (FunTypeIncomplete ty) = unsupported ty
 
 getPos :: NodeInfo -> AST.Location
-getPos n = 
+getPos n =
   let pos = posOfNode n
-    in AST.FileLocation 
+    in AST.FileLocation
         (BU.fromString $ posFile pos)
         (fromIntegral $ posRow pos)
         (fromIntegral $ posColumn pos)
