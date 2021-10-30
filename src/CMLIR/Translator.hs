@@ -28,7 +28,17 @@ import Debug.Trace
 import MLIR.AST.Builder (MonadBlockDecl)
 import qualified Language.C.Analysis.TypeUtils as AST
 
-data Env = Env {funcDefs :: [FunDef], typeDefs :: [Type]}
+data Env = Env {decls :: [Decl],
+                objDefs :: [ObjDef],
+                funDefs :: [FunDef],
+                enumerators :: [Enumerator],
+                typeDefs :: [TypeDef]}
+
+initEnv = Env{decls = [],
+              objDefs = [],
+              funDefs = [],
+              enumerators = [],
+              typeDefs = []}
 
 unsupportedM :: (Pretty a, Monad m) => a -> m b
 unsupportedM a = return $ unsupported a
@@ -41,20 +51,25 @@ translateToMLIR tu =
    MLIR.withContext (\ctx -> do
      MLIR.registerAllDialects ctx
      nativeOp <- fromAST ctx (mempty, mempty) $ do
-                   let res = runTrav [] $ AST.buildModule $ do
+                   let res = runTrav initEnv $ AST.buildModule $ do
                               -- setDefaultLocation (FileLocation "" 0 0)
                               lift $ withExtDeclHandler (analyseAST tu) handlers
-                              fs <- lift getUserState
-                              forM_ fs (\(name, ty) -> AST.buildSimpleFunction (BU.fromString name) [] AST.NoAttrs (do Std.return []))
+                              lift (funDefs <$> getUserState) >>= mapM_ addFunction
                    case res of
                      Left errs -> error $ show errs
-                     Right (res, _) -> res 
+                     Right (res, _) -> res
      --MLIR.dump nativeOp
      check <- MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
      BU.toString <$> MLIR.showOperationWithLocation nativeOp)
 
-handlers :: DeclEvent -> TravT [(String, AST.Type)] Identity ()
+addFunction :: MonadBlockDecl m => FunDef -> m ()
+addFunction (FunDef var stmt _) = do
+  let (name, ty) = varDecl var
+  AST.buildSimpleFunction (BU.fromString name) [] AST.NoAttrs $ do
+    Std.return []
+
+handlers :: DeclEvent -> TravT Env Identity ()
 handlers (TagEvent tagDef) = handleTag tagDef
 handlers (DeclEvent identDecl) = handleIdent identDecl
 handlers (ParamEvent paramDecl) = handleParam paramDecl
@@ -62,29 +77,36 @@ handlers (LocalEvent identDecl) = handleIdent identDecl
 handlers (TypeDefEvent typeDef) = handleType typeDef
 handlers (AsmEvent asmBlock) = handleAsm asmBlock
 
+handleTag :: Monad m => TagDef -> m ()
 handleTag (CompDef compT) = return ()
 handleTag (EnumDef enumT) = return ()
 
-handleIdent (Declaration decl) = return ()
-handleIdent (ObjectDef objDef) = return ()
-handleIdent (FunctionDef funDef) = handleFDef funDef
-handleIdent (EnumeratorDef enumerator) = return ()
+handleIdent :: IdentDecl -> Trav Env ()
+handleIdent (Declaration decl) = modifyUserState (\s -> s{decls=decl : decls s})
+handleIdent (ObjectDef objDef) = modifyUserState (\s -> s{objDefs=objDef : objDefs s})
+handleIdent (FunctionDef funDef) = modifyUserState (\s -> s{funDefs=funDef : funDefs s})
+handleIdent (EnumeratorDef enumerator) = modifyUserState (\s -> s{enumerators=enumerator : enumerators s})
 
+handleParam :: Monad m => ParamDecl -> m ()
 handleParam (ParamDecl varDecl _) = return ()
 handleParam (AbstractParamDecl varDecl _) = return ()
 
+handleType :: Monad m => TypeDef -> m ()
 handleType (TypeDef ident ty attrs _) = return ()
 
+handleAsm :: Monad m => CStringLiteral a -> m ()
 handleAsm (CStrLit c n) = return ()
 
+varName :: VarName -> String
 varName (VarName (Ident ident _ _) _) = ident
 varName NoName = ""
 
-type_ (FunctionType ty attrs) = f ty 
-  where f (FunType resType argTypes _) = 
+type_ :: Type -> AST.Type
+type_ (FunctionType ty attrs) = f ty
+  where f (FunType resType argTypes _) =
             AST.FunctionType (map (\t -> paramDecl t ^. _2) argTypes) (map type_ [resType])
         f (FunTypeIncomplete ty) = type_ ty
-type_ t@(DirectType name quals attrs) =
+type_ ty@(DirectType name quals attrs) =
   case name of
     TyVoid -> AST.NoneType
     TyIntegral (id -> TyBool) -> AST.IntegerType AST.Signless 1
@@ -101,18 +123,15 @@ type_ t@(DirectType name quals attrs) =
     TyIntegral (id -> TyULong) -> AST.IntegerType AST.Signless 64
     TyIntegral (id -> TyLLong) -> AST.IntegerType AST.Signed 64
     TyIntegral (id -> TyULLong) -> AST.IntegerType AST.Signless 64
-    TyFloating (id -> TyFloat) -> AST.Float32Type 
+    TyFloating (id -> TyFloat) -> AST.Float32Type
     TyFloating (id -> TyDouble) -> AST.Float64Type
     TyFloating (id -> TyLDouble) -> AST.Float64Type
-    ty -> unsupported t
+    _ -> unsupported ty
 type_ ty = unsupported ty
 
+paramDecl :: ParamDecl -> (String, AST.Type)
 paramDecl (ParamDecl var _) = varDecl var
 paramDecl (AbstractParamDecl var _) = varDecl var
 
+varDecl :: VarDecl -> (String, AST.Type)
 varDecl (VarDecl name attrs ty) = (varName name, type_ ty)
-
-handleFDef (FunDef var stmt _) = do
-  let (name, ty) = varDecl var
-  modifyUserState ((name, ty):)
-  return ()
