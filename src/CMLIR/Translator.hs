@@ -163,11 +163,11 @@ transExpr (CVar ident node) = do
   if isLocal then do
     id0 <- freshName
     let c = Arith.Constant (getPos node) AST.IndexType (AST.IntegerAttr AST.IndexType 0)
-        i0 = id0 AST.:= c
+        op0 = id0 AST.:= c
     id1 <- freshName
     let ld = MemRef.Load ty id [id0]
-        i1 = id1 AST.:= ld 
-    return [Left i0, Left i1, Right id1]
+        op1 = id1 AST.:= ld 
+    return [Left op0, Left op1, Right id1]
   else return [Right id]
 transExpr e = unsupported e
 
