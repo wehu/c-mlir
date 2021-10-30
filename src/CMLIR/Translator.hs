@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE PatternSynonyms #-}
 module CMLIR.Translator where
 
 import qualified MLIR.AST.Builder as AST
@@ -17,7 +18,8 @@ import Language.C.Analysis.TravMonad
 import Language.C.Analysis.SemRep
 import Language.C.Syntax.Constants
 import Language.C.Data.Ident
-import Language.C.Data.Node ( NodeInfo )
+import Language.C.Data.Node
+import Language.C.Data.Position
 import Language.C.Pretty
 import Control.Monad
 import Control.Monad.Trans
@@ -34,29 +36,38 @@ data Env = Env {decls :: [Decl],
                 funDefs :: [FunDef],
                 enumerators :: [Enumerator],
                 typeDefs :: [TypeDef],
-                labels :: M.Map String AST.BlockName}
+                labels :: M.Map String AST.BlockName,
+                idCounter :: Int}
+
+type EnvM = TravT Env Identity
 
 initEnv = Env{decls = [],
               objDefs = [],
               funDefs = [],
               enumerators = [],
               typeDefs = [],
-              labels = M.empty}
+              labels = M.empty,
+              idCounter = 0}
 
 underScope action = do
-  env <- lift getUserState
+  env <- getUserState
   result <- action
-  lift $ modifyUserState (const env)
+  modifyUserState (const env)
   return result
 
-addLabel name label = 
-  lift $ modifyUserState (\s -> s{labels=M.insert name label (labels s)})
+addLabel name label =
+   modifyUserState (\s -> s{labels=M.insert name label (labels s)})
 
 lookupLabel name = do
-  l <- lift $ M.lookup name <$> getUserState
+  l <- M.lookup name <$> getUserState
   case l of
     Just l -> return l
     Nothing -> error $ "cannot find label " ++ name
+
+freshName = do
+  id <- idCounter <$> getUserState
+  modifyUserState (\s -> s{idCounter = idCounter s + 1})
+  return $ BU.fromString $ show id
 
 unsupportedM :: (Pretty a, Monad m) => a -> m b
 unsupportedM a = return $ unsupported a
@@ -69,10 +80,12 @@ translateToMLIR tu =
    MLIR.withContext (\ctx -> do
      MLIR.registerAllDialects ctx
      nativeOp <- fromAST ctx (mempty, mempty) $ do
-                   let res = runTrav initEnv $ AST.buildModule $ do
+                   let res = runTrav initEnv $ do
                               -- setDefaultLocation (FileLocation "" 0 0)
-                              lift $ withExtDeclHandler (analyseAST tu) handlers
-                              lift (funDefs <$> getUserState) >>= mapM_ transFunction
+                              withExtDeclHandler (analyseAST tu) handlers
+                              fs <- getUserState >>= mapM transFunction . funDefs
+                              id <- freshName
+                              return $ AST.ModuleOp $ AST.Block id [] fs
                    case res of
                      Left errs -> error $ show errs
                      Right (res, _) -> res
@@ -81,73 +94,75 @@ translateToMLIR tu =
      unless check $ exitWith (ExitFailure 1)
      BU.toString <$> MLIR.showOperationWithLocation nativeOp)
 
-transFunction (FunDef var stmt _) = underScope $ do
+getPos :: NodeInfo -> AST.Location
+getPos n = 
+  let pos = posOfNode n
+    in AST.FileLocation (BU.fromString (posFile pos)) (fromIntegral $ posRow pos) (fromIntegral $ posColumn pos)
+
+transFunction :: FunDef -> EnvM AST.Binding
+transFunction (FunDef var stmt node) = underScope $ do
   let (name, ty) = varDecl var
   case ty of
     AST.FunctionType argTypes resultTypes -> do
-      AST.buildFunction (BU.fromString name) resultTypes AST.NoAttrs $ do
-        transBlock stmt
-        AST.endOfRegion
+      let args = over (traverse . _1) BU.fromString $ params var
+      b <- transBlock args stmt
+      return $ AST.Do $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
     ty -> error $ "expected a function type, but got " ++ show (pretty var)
 
-transBlock :: AST.MonadNameSupply m => CStatement NodeInfo -> AST.RegionBuilderT m ()
-transBlock (CCompound labels items _) = do
+transBlock :: [(AST.Name, AST.Type)] -> CStatement NodeInfo -> EnvM AST.Block
+transBlock args (CCompound labels items _) = do
+  id <- freshName
   let lnames = map identName labels
-  label <- AST.buildBlock $ do
-    mapM_ transBlockItem $ init items
-    transBlockTerminator $ last items
-  -- addLabel (head lnames) label
-  return ()
-transBlock s = unsupported s
+  ops <- join <$> mapM transBlockItem items
+  forM_ lnames (`addLabel` id)
+  return $ AST.Block id args ops
+transBlock args s = unsupported s
 
-transBlockItem :: AST.MonadBlockBuilder m => CCompoundBlockItem NodeInfo -> m ()
-transBlockItem (CBlockStmt s) = transNoTerminator s
+transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [AST.Binding]
+transBlockItem (CBlockStmt s) = transStmt s
 transBlockItem s = unsupported s
 
-transNoTerminator :: AST.MonadBlockBuilder m => CStatement NodeInfo -> m ()
-transNoTerminator s = unsupported s
+transStmt :: CStatement NodeInfo -> EnvM [AST.Binding]
+transStmt (CReturn Nothing node) =
+  return [AST.Do $ Std.Return (getPos node) []]
+transStmt (CReturn (Just e) node) = do
+  results <- transExpr e
+  let (n AST.:= v) = last results
+  return $ results ++ [AST.Do $ Std.Return (getPos node) [n]]
+transStmt e = unsupported e
 
-transBlockTerminator :: AST.MonadBlockBuilder m => CCompoundBlockItem NodeInfo -> m AST.EndOfBlock
-transBlockTerminator (CBlockStmt s) = transTerminator s
-transBlockTerminator s = unsupported s
-
-transTerminator :: AST.MonadBlockBuilder m => CStatement NodeInfo -> m AST.EndOfBlock
-transTerminator (CReturn Nothing _) = Std.return []
-transTerminator (CReturn (Just e) _) = do
-  result <- transExpr e
-  Std.return [result]
-transTerminator e = unsupported e
-
-transExpr :: AST.MonadBlockBuilder m => CExpression NodeInfo -> m AST.Value
+transExpr :: CExpression NodeInfo -> EnvM [AST.Binding]
 transExpr (CConst c) = transConst c
 transExpr e = unsupported e
 
-transConst :: AST.MonadBlockBuilder m => CConstant NodeInfo -> m AST.Value
-transConst (CIntConst i _) = transInt i
-transConst (CCharConst c _) = transChar c
-transConst (CFloatConst f _) = transFloat f
+transConst :: CConstant NodeInfo -> EnvM [AST.Binding]
+transConst (CIntConst i node) = transInt i (getPos node)
+transConst (CCharConst c node) = transChar c (getPos node)
+transConst (CFloatConst f node) = transFloat f (getPos node)
 transConst (CStrConst s _) = transStr s
 
-transInt :: AST.MonadBlockBuilder m => CInteger -> m AST.Value
-transInt (CInteger i _ _) = do
+transInt :: CInteger -> AST.Location -> EnvM [AST.Binding]
+transInt (CInteger i _ _) loc = do
+  id <- freshName
   let ty = AST.IntegerType AST.Signless 32
-  Arith.constant ty (AST.IntegerAttr ty (fromIntegral i))
+  return [id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral i))]
 
-transChar :: AST.MonadBlockBuilder m => CChar -> m AST.Value
-transChar (CChar c _) = do
+transChar :: CChar -> AST.Location -> EnvM [AST.Binding]
+transChar (CChar c _) loc = do
+  id <- freshName
   let ty = AST.IntegerType AST.Signless 8
-  Arith.constant ty (AST.IntegerAttr ty (fromIntegral $ ord c))
-transChar c = error $ "unsupported chars"
+  return [id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral $ ord c))]
+transChar c loc = error "unsupported chars"
 
-transFloat :: AST.MonadBlockBuilder m => CFloat -> m AST.Value
-transFloat (CFloat str) = do
+transFloat :: CFloat -> AST.Location -> EnvM [AST.Binding]
+transFloat (CFloat str) loc = do
+  id <- freshName
   let ty = AST.Float32Type
-  Arith.constant ty (AST.FloatAttr ty $ read str)
+  return [id AST.:= Arith.Constant loc ty (AST.FloatAttr ty $ read str)]
 
-transStr :: AST.MonadBlockBuilder m => CString -> m AST.Value
 transStr s@(CString str _) = error "xxx"
 
-handlers :: DeclEvent -> TravT Env Identity ()
+handlers :: DeclEvent -> EnvM ()
 handlers (TagEvent tagDef) = handleTag tagDef
 handlers (DeclEvent identDecl) = handleIdentDecl identDecl
 handlers (ParamEvent paramDecl) = handleParam paramDecl
@@ -227,3 +242,10 @@ paramDecl (AbstractParamDecl var _) = varDecl var
 
 varDecl :: VarDecl -> (String, AST.Type)
 varDecl (VarDecl name attrs ty) = (varName name, type_ ty)
+
+params :: VarDecl -> [(String, AST.Type)]
+params (VarDecl name attr ty) = ps ty
+  where ps (FunctionType ty attrs) = f ty
+        ps _ = unsupported ty
+        f (FunType resType argTypes _) = map paramDecl argTypes
+        f (FunTypeIncomplete ty) = unsupported ty
