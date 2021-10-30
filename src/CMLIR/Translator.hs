@@ -16,6 +16,7 @@ import Language.C.Syntax.AST
 import Language.C.Analysis.AstAnalysis
 import Language.C.Analysis.TravMonad
 import Language.C.Analysis.SemRep
+import Language.C.Analysis.ConstEval
 import Language.C.Syntax.Constants
 import Language.C.Data.Ident
 import Language.C.Data.Node
@@ -102,9 +103,9 @@ transFunction f@(FunDef var stmt node) = underScope $ do
 transBlock :: [(AST.Name, AST.Type)] -> CStatement NodeInfo -> EnvM AST.Block
 transBlock args (CCompound labels items _) = do
   id <- freshName
-  let lnames = map identName labels
+  -- let lnames = map identName labels
   ops <- join <$> mapM transBlockItem items
-  forM_ lnames (`addLabel` id)
+  -- forM_ lnames (`addLabel` id)
   return $ AST.Block id args ops
 transBlock args s = unsupported s
 
@@ -193,11 +194,13 @@ handleParam :: DeclEvent -> EnvM ()
 handleParam (ParamEvent p) = return ()
 handleParam _ = return ()
 
-handleTypeDecl :: TypeDef -> EnvM ()
-handleTypeDecl typeDef = modifyUserState (\s -> s{typeDefs=typeDefs s ++ [typeDef]})
+handleTypeDecl :: DeclEvent -> EnvM ()
+handleTypeDecl (TypeDefEvent typeDef) = modifyUserState (\s -> s{typeDefs=typeDefs s ++ [typeDef]})
+handleTypeDecl _ = return ()
 
-handleAsm :: Monad m => CStringLiteral a -> m ()
-handleAsm (CStrLit c n) = return ()
+handleAsm :: DeclEvent -> EnvM ()
+handleAsm (AsmEvent (CStrLit c n)) = return ()
+handleAsm _ = return ()
 
 identName :: Ident -> String
 identName (Ident ident _ _) = ident
@@ -237,13 +240,17 @@ type_ ty@(DirectType name quals attrs) =
     TyEnum ref -> unsupported ty
     TyBuiltin _ -> unsupported ty
     _ -> unsupported ty
-type_ (PtrType t quals attrs) = AST.MemRefType [Nothing] (type_ t) Nothing Nothing
-type_ (ArrayType t size quals attrs) = AST.MemRefType [arraySize size] (type_ t) Nothing Nothing
+type_ ty@(PtrType t quals attrs) = unsupported ty --AST.MemRefType [Nothing] (type_ t) Nothing Nothing
+type_ (ArrayType t size quals attrs) =
+  let s = arraySize size
+   in case type_ t of
+        AST.MemRefType sizes t Nothing Nothing -> AST.MemRefType (s:sizes) t Nothing Nothing
+        t -> AST.MemRefType [s] t Nothing Nothing
 type_ (TypeDefType (TypeDefRef ident t _) quals attrs) = type_ t
 
-arraySize :: ArraySize -> Maybe a
+arraySize :: ArraySize -> Maybe Int
 arraySize (UnknownArraySize static) = Nothing
-arraySize (ArraySize static expr) = Nothing
+arraySize (ArraySize static expr) = fromIntegral <$> intValue expr
 
 paramDecl :: ParamDecl -> (String, AST.Type)
 paramDecl (ParamDecl var _) = varDecl var
