@@ -33,13 +33,30 @@ data Env = Env {decls :: [Decl],
                 objDefs :: [ObjDef],
                 funDefs :: [FunDef],
                 enumerators :: [Enumerator],
-                typeDefs :: [TypeDef]}
+                typeDefs :: [TypeDef],
+                labels :: M.Map String AST.BlockName}
 
 initEnv = Env{decls = [],
               objDefs = [],
               funDefs = [],
               enumerators = [],
-              typeDefs = []}
+              typeDefs = [],
+              labels = M.empty}
+
+underScope action = do
+  env <- lift getUserState
+  result <- action
+  lift $ modifyUserState (const env)
+  return result
+
+addLabel name label = 
+  lift $ modifyUserState (\s -> s{labels=M.insert name label (labels s)})
+
+lookupLabel name = do
+  l <- lift $ M.lookup name <$> getUserState
+  case l of
+    Just l -> return l
+    Nothing -> error $ "cannot find label " ++ name
 
 unsupportedM :: (Pretty a, Monad m) => a -> m b
 unsupportedM a = return $ unsupported a
@@ -64,27 +81,30 @@ translateToMLIR tu =
      unless check $ exitWith (ExitFailure 1)
      BU.toString <$> MLIR.showOperationWithLocation nativeOp)
 
-transFunction :: AST.MonadBlockDecl m => FunDef -> m ()
-transFunction (FunDef var stmt _) = do
+transFunction (FunDef var stmt _) = underScope $ do
   let (name, ty) = varDecl var
   case ty of
     AST.FunctionType argTypes resultTypes -> do
       AST.buildFunction (BU.fromString name) resultTypes AST.NoAttrs $ do
-        transRegion stmt
+        transBlock stmt
         AST.endOfRegion
     ty -> error $ "expected a function type, but got " ++ show (pretty var)
 
-transRegion :: AST.MonadNameSupply m => CStatement NodeInfo -> AST.RegionBuilderT m AST.BlockName
-transRegion (CCompound labels items _) = do
-  AST.buildBlock $ do
-    -- mapM_ transBlockItem $ init items
+transBlock :: AST.MonadNameSupply m => CStatement NodeInfo -> AST.RegionBuilderT m ()
+transBlock (CCompound labels items _) = do
+  let lnames = map identName labels
+  label <- AST.buildBlock $ do
+    mapM_ transBlockItem $ init items
     transBlockTerminator $ last items
-transRegion s = unsupported s
+  -- addLabel (head lnames) label
+  return ()
+transBlock s = unsupported s
 
+transBlockItem :: AST.MonadBlockBuilder m => CCompoundBlockItem NodeInfo -> m ()
+transBlockItem (CBlockStmt s) = transNoTerminator s
 transBlockItem s = unsupported s
 
-transNoTerminator :: AST.MonadBlockBuilder m => CExpression NodeInfo -> m AST.Value
-transNoTerminator (CConst c) = transConst c
+transNoTerminator :: AST.MonadBlockBuilder m => CStatement NodeInfo -> m ()
 transNoTerminator s = unsupported s
 
 transBlockTerminator :: AST.MonadBlockBuilder m => CCompoundBlockItem NodeInfo -> m AST.EndOfBlock
@@ -117,7 +137,7 @@ transChar :: AST.MonadBlockBuilder m => CChar -> m AST.Value
 transChar (CChar c _) = do
   let ty = AST.IntegerType AST.Signless 8
   Arith.constant ty (AST.IntegerAttr ty (fromIntegral $ ord c))
-transChar c = error "xxxx"
+transChar c = error $ "unsupported chars"
 
 transFloat :: AST.MonadBlockBuilder m => CFloat -> m AST.Value
 transFloat (CFloat str) = do
@@ -155,8 +175,11 @@ handleTypeDecl typeDef = modifyUserState (\s -> s{typeDefs=typeDef : typeDefs s}
 handleAsm :: Monad m => CStringLiteral a -> m ()
 handleAsm (CStrLit c n) = return ()
 
+identName :: Ident -> String
+identName (Ident ident _ _) = ident
+
 varName :: VarName -> String
-varName (VarName (Ident ident _ _) _) = ident
+varName (VarName ident _) = identName ident
 varName NoName = ""
 
 type_ :: Type -> AST.Type
