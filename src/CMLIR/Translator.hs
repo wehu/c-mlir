@@ -161,19 +161,41 @@ transStmt (CReturn (Just e) node) = do
 transStmt (CExpr (Just e) node) = transExpr e
 transStmt e = unsupported e
 
+const0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
+
 transExpr :: CExpression NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
 transExpr (CConst c) = transConst c
 transExpr (CVar ident node) = do
   (id, ty, isLocal) <- lookupVar (identName ident)
   if isLocal then do
     id0 <- freshName
-    let c = Arith.Constant (getPos node) AST.IndexType (AST.IntegerAttr AST.IndexType 0)
+    let c = const0 (getPos node)
         op0 = id0 AST.:= c
     id1 <- freshName
     let ld = MemRef.Load ty id [id0]
-        op1 = id1 AST.:= ld 
+        op1 = id1 AST.:= ld
     return [Left op0, Left op1, Right id1]
   else return [Right id]
+transExpr (CAssign CAssignOp (CVar ident _) rhs node) = do
+  (id, ty, isLocal) <- lookupVar (identName ident)
+  rhsBs <- transExpr rhs
+  let rhsId = lastId rhsBs
+  id0 <- freshName
+  let c = const0 (getPos node)
+      op0 = id0 AST.:= c
+  id1 <- freshName
+  let st = MemRef.Store rhsId id [id0]
+      op1 = id1 AST.:= st
+  return $ rhsBs ++ [Left op0, Left op1, Right id1]
+transExpr (CBinary op lhs rhs node) = do
+  lhsBs <- transExpr lhs
+  rhsBs <- transExpr rhs
+  let lhsId = lastId lhsBs
+      rhsId = lastId rhsBs
+      loc = getPos node
+  id <- freshName
+  let op = id AST.:= Arith.AddI loc (AST.IntegerType AST.Signless 32) lhsId rhsId
+  return $ lhsBs ++ rhsBs ++ [Left op]
 transExpr e = unsupported e
 
 transConst :: CConstant NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
@@ -259,18 +281,18 @@ type_ ty@(DirectType name quals attrs) =
   case name of
     TyVoid -> AST.NoneType
     TyIntegral (id -> TyBool) -> AST.IntegerType AST.Signless 1
-    TyIntegral (id -> TyChar) -> AST.IntegerType AST.Signed 8
-    TyIntegral (id -> TySChar) -> AST.IntegerType AST.Signed 8
+    TyIntegral (id -> TyChar) -> AST.IntegerType AST.Signless 8
+    TyIntegral (id -> TySChar) -> AST.IntegerType AST.Signless 8
     TyIntegral (id -> TyUChar) -> AST.IntegerType AST.Signless 8
-    TyIntegral (id -> TyShort) -> AST.IntegerType AST.Signed 16
+    TyIntegral (id -> TyShort) -> AST.IntegerType AST.Signless 16
     TyIntegral (id -> TyUShort) -> AST.IntegerType AST.Signless 16
-    TyIntegral (id -> TyInt) -> AST.IntegerType AST.Signed 32
+    TyIntegral (id -> TyInt) -> AST.IntegerType AST.Signless 32
     TyIntegral (id -> TyUInt) -> AST.IntegerType AST.Signless 32
-    TyIntegral (id -> TyInt128) -> AST.IntegerType AST.Signed 128
+    TyIntegral (id -> TyInt128) -> AST.IntegerType AST.Signless 128
     TyIntegral (id -> TyUInt128) -> AST.IntegerType AST.Signless 128
-    TyIntegral (id -> TyLong) -> AST.IntegerType AST.Signed 64
+    TyIntegral (id -> TyLong) -> AST.IntegerType AST.Signless 64
     TyIntegral (id -> TyULong) -> AST.IntegerType AST.Signless 64
-    TyIntegral (id -> TyLLong) -> AST.IntegerType AST.Signed 64
+    TyIntegral (id -> TyLLong) -> AST.IntegerType AST.Signless 64
     TyIntegral (id -> TyULLong) -> AST.IntegerType AST.Signless 64
     TyFloating (id -> TyFloat) -> AST.Float32Type
     TyFloating (id -> TyDouble) -> AST.Float64Type
@@ -290,9 +312,9 @@ type_ (ArrayType t size quals attrs) =
 type_ (TypeDefType (TypeDefRef ident t _) quals attrs) = type_ t
 
 arraySize :: ArraySize -> Maybe Int
-arraySize (UnknownArraySize static) = 
+arraySize (UnknownArraySize static) =
   error "unsupported dynamic array size"
-arraySize (ArraySize static expr) = 
+arraySize (ArraySize static expr) =
   case intValue expr of
     Just e -> Just $ fromIntegral e
     Nothing -> error "unsupported dynamic array size"
