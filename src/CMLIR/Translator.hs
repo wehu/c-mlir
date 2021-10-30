@@ -71,28 +71,28 @@ addFunction (FunDef var stmt _) = do
 
 handlers :: DeclEvent -> TravT Env Identity ()
 handlers (TagEvent tagDef) = handleTag tagDef
-handlers (DeclEvent identDecl) = handleIdent identDecl
+handlers (DeclEvent identDecl) = handleIdentDecl identDecl
 handlers (ParamEvent paramDecl) = handleParam paramDecl
-handlers (LocalEvent identDecl) = handleIdent identDecl
-handlers (TypeDefEvent typeDef) = handleType typeDef
+handlers (LocalEvent identDecl) = handleIdentDecl identDecl
+handlers (TypeDefEvent typeDef) = handleTypeDecl typeDef
 handlers (AsmEvent asmBlock) = handleAsm asmBlock
 
 handleTag :: Monad m => TagDef -> m ()
 handleTag (CompDef compT) = return ()
 handleTag (EnumDef enumT) = return ()
 
-handleIdent :: IdentDecl -> Trav Env ()
-handleIdent (Declaration decl) = modifyUserState (\s -> s{decls=decl : decls s})
-handleIdent (ObjectDef objDef) = modifyUserState (\s -> s{objDefs=objDef : objDefs s})
-handleIdent (FunctionDef funDef) = modifyUserState (\s -> s{funDefs=funDef : funDefs s})
-handleIdent (EnumeratorDef enumerator) = modifyUserState (\s -> s{enumerators=enumerator : enumerators s})
+handleIdentDecl :: IdentDecl -> Trav Env ()
+handleIdentDecl (Declaration decl) = modifyUserState (\s -> s{decls=decl : decls s})
+handleIdentDecl (ObjectDef objDef) = modifyUserState (\s -> s{objDefs=objDef : objDefs s})
+handleIdentDecl (FunctionDef funDef) = modifyUserState (\s -> s{funDefs=funDef : funDefs s})
+handleIdentDecl (EnumeratorDef enumerator) = modifyUserState (\s -> s{enumerators=enumerator : enumerators s})
 
 handleParam :: Monad m => ParamDecl -> m ()
 handleParam (ParamDecl varDecl _) = return ()
 handleParam (AbstractParamDecl varDecl _) = return ()
 
-handleType :: Monad m => TypeDef -> m ()
-handleType (TypeDef ident ty attrs _) = return ()
+handleTypeDecl :: TypeDef -> Trav Env ()
+handleTypeDecl typeDef = modifyUserState (\s -> s{typeDefs=typeDef : typeDefs s})
 
 handleAsm :: Monad m => CStringLiteral a -> m ()
 handleAsm (CStrLit c n) = return ()
