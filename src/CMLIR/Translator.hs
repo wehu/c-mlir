@@ -128,7 +128,7 @@ transConst :: CConstant NodeInfo -> EnvM [AST.Binding]
 transConst (CIntConst i node) = transInt i (getPos node)
 transConst (CCharConst c node) = transChar c (getPos node)
 transConst (CFloatConst f node) = transFloat f (getPos node)
-transConst (CStrConst s _) = transStr s
+transConst (CStrConst s node) = transStr s (getPos node)
 
 transInt :: CInteger -> AST.Location -> EnvM [AST.Binding]
 transInt (CInteger i _ _) loc = do
@@ -149,7 +149,8 @@ transFloat (CFloat str) loc = do
   let ty = AST.Float32Type
   return [id AST.:= Arith.Constant loc ty (AST.FloatAttr ty $ read str)]
 
-transStr s@(CString str _) = error "xxx"
+transStr :: CString -> AST.Location -> EnvM [AST.Binding]
+transStr s@(CString str _) loc = error "xxx"
 
 handlers :: DeclEvent -> EnvM ()
 handlers (TagEvent tagDef) = handleTag tagDef
