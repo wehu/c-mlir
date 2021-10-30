@@ -15,6 +15,7 @@ import Language.C.Syntax.AST
 import Language.C.Analysis.AstAnalysis
 import Language.C.Analysis.TravMonad
 import Language.C.Analysis.SemRep
+import Language.C.Syntax.Constants
 import Language.C.Data.Ident
 import Language.C.Data.Node ( NodeInfo )
 import Language.C.Pretty
@@ -22,11 +23,11 @@ import Control.Monad
 import Control.Monad.Trans
 import Control.Lens
 import Data.Maybe
+import Data.Char (ord)
+import qualified Data.List as L
 import qualified Data.Map as M
 import System.Exit
 import Debug.Trace
-import MLIR.AST.Builder (MonadBlockDecl)
-import qualified Language.C.Analysis.TypeUtils as AST
 
 data Env = Env {decls :: [Decl],
                 objDefs :: [ObjDef],
@@ -54,7 +55,7 @@ translateToMLIR tu =
                    let res = runTrav initEnv $ AST.buildModule $ do
                               -- setDefaultLocation (FileLocation "" 0 0)
                               lift $ withExtDeclHandler (analyseAST tu) handlers
-                              lift (funDefs <$> getUserState) >>= mapM_ addFunction
+                              lift (funDefs <$> getUserState) >>= mapM_ transFunction
                    case res of
                      Left errs -> error $ show errs
                      Right (res, _) -> res
@@ -63,11 +64,68 @@ translateToMLIR tu =
      unless check $ exitWith (ExitFailure 1)
      BU.toString <$> MLIR.showOperationWithLocation nativeOp)
 
-addFunction :: MonadBlockDecl m => FunDef -> m ()
-addFunction (FunDef var stmt _) = do
+transFunction :: AST.MonadBlockDecl m => FunDef -> m ()
+transFunction (FunDef var stmt _) = do
   let (name, ty) = varDecl var
-  AST.buildSimpleFunction (BU.fromString name) [] AST.NoAttrs $ do
-    Std.return []
+  case ty of
+    AST.FunctionType argTypes resultTypes -> do
+      AST.buildFunction (BU.fromString name) resultTypes AST.NoAttrs $ do
+        transRegion stmt
+        AST.endOfRegion
+    ty -> error $ "expected a function type, but got " ++ show (pretty var)
+
+transRegion :: AST.MonadNameSupply m => CStatement NodeInfo -> AST.RegionBuilderT m AST.BlockName
+transRegion (CCompound labels items _) = do
+  AST.buildBlock $ do
+    -- mapM_ transBlockItem $ init items
+    transBlockTerminator $ last items
+transRegion s = unsupported s
+
+transBlockItem s = unsupported s
+
+transNoTerminator :: AST.MonadBlockBuilder m => CExpression NodeInfo -> m AST.Value
+transNoTerminator (CConst c) = transConst c
+transNoTerminator s = unsupported s
+
+transBlockTerminator :: AST.MonadBlockBuilder m => CCompoundBlockItem NodeInfo -> m AST.EndOfBlock
+transBlockTerminator (CBlockStmt s) = transTerminator s
+transBlockTerminator s = unsupported s
+
+transTerminator :: AST.MonadBlockBuilder m => CStatement NodeInfo -> m AST.EndOfBlock
+transTerminator (CReturn Nothing _) = Std.return []
+transTerminator (CReturn (Just e) _) = do
+  result <- transExpr e
+  Std.return [result]
+transTerminator e = unsupported e
+
+transExpr :: AST.MonadBlockBuilder m => CExpression NodeInfo -> m AST.Value
+transExpr (CConst c) = transConst c
+transExpr e = unsupported e
+
+transConst :: AST.MonadBlockBuilder m => CConstant NodeInfo -> m AST.Value
+transConst (CIntConst i _) = transInt i
+transConst (CCharConst c _) = transChar c
+transConst (CFloatConst f _) = transFloat f
+transConst (CStrConst s _) = transStr s
+
+transInt :: AST.MonadBlockBuilder m => CInteger -> m AST.Value
+transInt (CInteger i _ _) = do
+  let ty = AST.IntegerType AST.Signless 32
+  Arith.constant ty (AST.IntegerAttr ty (fromIntegral i))
+
+transChar :: AST.MonadBlockBuilder m => CChar -> m AST.Value
+transChar (CChar c _) = do
+  let ty = AST.IntegerType AST.Signless 8
+  Arith.constant ty (AST.IntegerAttr ty (fromIntegral $ ord c))
+transChar c = error "xxxx"
+
+transFloat :: AST.MonadBlockBuilder m => CFloat -> m AST.Value
+transFloat (CFloat str) = do
+  let ty = AST.Float32Type
+  Arith.constant ty (AST.FloatAttr ty $ read str)
+
+transStr :: AST.MonadBlockBuilder m => CString -> m AST.Value
+transStr s@(CString str _) = error "xxx"
 
 handlers :: DeclEvent -> TravT Env Identity ()
 handlers (TagEvent tagDef) = handleTag tagDef
@@ -126,8 +184,19 @@ type_ ty@(DirectType name quals attrs) =
     TyFloating (id -> TyFloat) -> AST.Float32Type
     TyFloating (id -> TyDouble) -> AST.Float64Type
     TyFloating (id -> TyLDouble) -> AST.Float64Type
+    TyFloating (id -> TyFloatN n _) -> unsupported ty
+    TyComplex t -> type_ (DirectType (TyFloating t) quals attrs)
+    TyComp ref -> unsupported ty
+    TyEnum ref -> unsupported ty
+    TyBuiltin _ -> unsupported ty
     _ -> unsupported ty
-type_ ty = unsupported ty
+type_ (PtrType t quals attrs) = AST.MemRefType [Nothing] (type_ t) Nothing Nothing
+type_ (ArrayType t size quals attrs) = AST.MemRefType [arraySize size] (type_ t) Nothing Nothing
+type_ (TypeDefType (TypeDefRef ident t _) quals attrs) = type_ t
+
+arraySize :: ArraySize -> Maybe a
+arraySize (UnknownArraySize static) = Nothing
+arraySize (ArraySize static expr) = Nothing
 
 paramDecl :: ParamDecl -> (String, AST.Type)
 paramDecl (ParamDecl var _) = varDecl var
