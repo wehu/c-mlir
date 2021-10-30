@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       CMLIR
+      CMLIR.Dialect.MemRef
       CMLIR.Parser
       CMLIR.Translator
   other-modules:
@@ -33,7 +34,8 @@ library
   hs-source-dirs:
       src
   build-depends:
-      base >=4.7 && <5
+      array
+    , base >=4.7 && <5
     , containers
     , language-c
     , lens
@@ -51,7 +53,8 @@ executable c-mlir-exe
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      array
+    , base >=4.7 && <5
     , c-mlir
     , containers
     , language-c
@@ -71,7 +74,8 @@ test-suite c-mlir-test
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      array
+    , base >=4.7 && <5
     , c-mlir
     , containers
     , language-c

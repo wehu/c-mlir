@@ -27,6 +27,7 @@ dependencies:
 - containers
 - mtl
 - lens
+- array
 - optparse-applicative
 
 library:

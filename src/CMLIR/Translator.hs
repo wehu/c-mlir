@@ -11,6 +11,7 @@ import qualified Data.ByteString.UTF8 as BU
 import qualified MLIR.AST.Dialect.Arith as Arith
 import qualified MLIR.AST.Dialect.Std as Std
 import qualified MLIR.Native as MLIR
+import qualified CMLIR.Dialect.MemRef as MemRef
 
 import Language.C.Syntax.AST
 import Language.C.Analysis.AstAnalysis
@@ -37,7 +38,8 @@ data Env = Env {decls :: [Decl],
                 funDefs :: [FunDef],
                 enumerators :: [Enumerator],
                 typeDefs :: [TypeDef],
-                labels :: M.Map String AST.BlockName,
+                labels :: M.Map String BU.ByteString,
+                vars :: M.Map String BU.ByteString,
                 idCounter :: Int}
 
 type EnvM = TravT Env Identity
@@ -48,6 +50,7 @@ initEnv = Env{decls = [],
               enumerators = [],
               typeDefs = [],
               labels = M.empty,
+              vars = M.empty,
               idCounter = 0}
 
 underScope action = do
@@ -64,6 +67,15 @@ lookupLabel name = do
   case l of
     Just l -> return l
     Nothing -> error $ "cannot find label " ++ name
+
+addVar name id =
+  modifyUserState (\s -> s{vars=M.insert name id (vars s)})
+
+lookupVar name = do
+  v <- M.lookup name . vars <$> getUserState
+  case v of
+    Just v -> return v
+    Nothing -> error $ "cannot find variable " ++ name
 
 freshName :: EnvM BU.ByteString
 freshName = do
@@ -97,6 +109,7 @@ transFunction :: FunDef -> EnvM AST.Binding
 transFunction f@(FunDef var stmt node) = underScope $ do
   let (name, ty) = varDecl var
       args = over (traverse . _1) BU.fromString $ params var
+  mapM_ (uncurry addVar) [(BU.toString a, a) | a <- args ^.. traverse . _1]
   b <- transBlock args stmt
   return $ AST.Do $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
 
@@ -106,10 +119,10 @@ transBlock args (CCompound labels items _) = do
   -- let lnames = map identName labels
   ops <- join <$> mapM transBlockItem items
   -- forM_ lnames (`addLabel` id)
-  return $ AST.Block id args ops
+  return $ AST.Block id args (ops ^..traverse._Left)
 transBlock args s = unsupported s
 
-transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [AST.Binding]
+transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
 transBlockItem (CBlockStmt s) = transStmt s
 transBlockItem (CBlockDecl decl) = do
   modifyUserState (\s -> s{objDefs=[]})
@@ -117,50 +130,64 @@ transBlockItem (CBlockDecl decl) = do
   getUserState >>= (\s -> join <$> mapM transLocalDecl (objDefs s))
 transBlockItem s = unsupported s
 
-transLocalDecl :: ObjDef -> EnvM [AST.Binding]
+transLocalDecl :: ObjDef -> EnvM [Either AST.Binding BU.ByteString]
 transLocalDecl (ObjDef var init node) = do
-  let (n, v) = varDecl var
-  return []
+  id <- freshName
+  let (n, t) = varDecl var
+      mt = case t of
+             AST.MemRefType{} -> t
+             t -> AST.MemRefType [Just 1] t Nothing Nothing
+      alloc = MemRef.alloca (getPos node) mt [] []
+      b = Left $ id AST.:= alloc
+  addVar n id
+  return [b]
 
-transStmt :: CStatement NodeInfo -> EnvM [AST.Binding]
+transStmt :: CStatement NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
 transStmt (CReturn Nothing node) =
-  return [AST.Do $ Std.Return (getPos node) []]
+  return [Left $ AST.Do $ Std.Return (getPos node) []]
 transStmt (CReturn (Just e) node) = do
   results <- transExpr e
-  let (n AST.:= v) = last results
-  return $ results ++ [AST.Do $ Std.Return (getPos node) [n]]
+  let id = case last results of
+             Left (n AST.:= v) -> n
+             Right n -> n
+             _ -> unsupported e
+  return $ results ++ [Left $ AST.Do $ Std.Return (getPos node) [id]]
+transStmt (CExpr (Just e) node) = transExpr e
 transStmt e = unsupported e
 
-transExpr :: CExpression NodeInfo -> EnvM [AST.Binding]
+transExpr :: CExpression NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
 transExpr (CConst c) = transConst c
+transExpr (CVar ident _) = do
+  id <- lookupVar (identName ident)
+  return [Right id]
 transExpr e = unsupported e
 
-transConst :: CConstant NodeInfo -> EnvM [AST.Binding]
+transConst :: CConstant NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
 transConst (CIntConst i node) = transInt i (getPos node)
 transConst (CCharConst c node) = transChar c (getPos node)
 transConst (CFloatConst f node) = transFloat f (getPos node)
 transConst (CStrConst s node) = transStr s (getPos node)
 
-transInt :: CInteger -> AST.Location -> EnvM [AST.Binding]
+transInt :: CInteger -> AST.Location -> EnvM [Either AST.Binding BU.ByteString]
 transInt (CInteger i _ _) loc = do
   id <- freshName
   let ty = AST.IntegerType AST.Signless 32
-  return [id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral i))]
+  return [Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral i))]
 
-transChar :: CChar -> AST.Location -> EnvM [AST.Binding]
+transChar :: CChar -> AST.Location -> EnvM [Either AST.Binding BU.ByteString]
 transChar (CChar c _) loc = do
   id <- freshName
   let ty = AST.IntegerType AST.Signless 8
-  return [id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral $ ord c))]
+  return [Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral $ ord c))]
 transChar c loc = error "unsupported chars"
 
-transFloat :: CFloat -> AST.Location -> EnvM [AST.Binding]
+transFloat :: CFloat -> AST.Location -> EnvM [Either AST.Binding BU.ByteString]
 transFloat (CFloat str) loc = do
   id <- freshName
   let ty = AST.Float32Type
-  return [id AST.:= Arith.Constant loc ty (AST.FloatAttr ty $ read str)]
+  return [Left $ id AST.:= Arith.Constant loc ty (AST.FloatAttr ty $ read str)]
 
-transStr :: CString -> AST.Location -> EnvM [AST.Binding]
+transStr :: CString -> AST.Location -> EnvM [Either AST.Binding BU.ByteString]
 transStr s@(CString str _) loc = error "xxx"
 
 -- handlers :: DeclEvent -> EnvM ()
@@ -260,11 +287,11 @@ varDecl :: VarDecl -> (String, AST.Type)
 varDecl (VarDecl name attrs ty) = (varName name, type_ ty)
 
 params :: VarDecl -> [(String, AST.Type)]
-params (VarDecl name attr ty) = ps ty
-  where ps (FunctionType ty attrs) = f ty
-        ps _ = unsupported ty
-        f (FunType resType argTypes _) = map paramDecl argTypes
-        f (FunTypeIncomplete ty) = unsupported ty
+params (VarDecl name attr ty) = f ty
+  where f (FunctionType ty attrs) = ps ty
+        f _ = unsupported ty
+        ps (FunType resType argTypes _) = map paramDecl argTypes
+        ps (FunTypeIncomplete ty) = unsupported ty
 
 getPos :: NodeInfo -> AST.Location
 getPos n =
