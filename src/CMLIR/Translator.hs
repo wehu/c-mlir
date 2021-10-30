@@ -155,15 +155,17 @@ transStmt :: CStatement NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
 transStmt (CReturn Nothing node) =
   return [Left $ AST.Do $ Std.Return (getPos node) []]
 transStmt (CReturn (Just e) node) = do
-  bs <- transExpr e
+  (bs, ty) <- transExpr e
   let id = lastId bs
   return $ bs ++ [Left $ AST.Do $ Std.Return (getPos node) [id]]
-transStmt (CExpr (Just e) node) = transExpr e
+transStmt (CExpr (Just e) node) = do
+  (bs, ty) <- transExpr e
+  return bs
 transStmt e = unsupported e
 
 const0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
 
-transExpr :: CExpression NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
+transExpr :: CExpression NodeInfo -> EnvM ([Either AST.Binding BU.ByteString], AST.Type)
 transExpr (CConst c) = transConst c
 transExpr (CVar ident node) = do
   (id, ty, isLocal) <- lookupVar (identName ident)
@@ -174,11 +176,11 @@ transExpr (CVar ident node) = do
     id1 <- freshName
     let ld = MemRef.Load ty id [id0]
         op1 = id1 AST.:= ld
-    return [Left op0, Left op1, Right id1]
-  else return [Right id]
+    return ([Left op0, Left op1, Right id1], ty)
+  else return ([Right id], ty)
 transExpr (CAssign CAssignOp (CVar ident _) rhs node) = do
   (id, ty, isLocal) <- lookupVar (identName ident)
-  rhsBs <- transExpr rhs
+  (rhsBs, rhsTy) <- transExpr rhs
   let rhsId = lastId rhsBs
   id0 <- freshName
   let c = const0 (getPos node)
@@ -186,44 +188,53 @@ transExpr (CAssign CAssignOp (CVar ident _) rhs node) = do
   id1 <- freshName
   let st = MemRef.Store rhsId id [id0]
       op1 = id1 AST.:= st
-  return $ rhsBs ++ [Left op0, Left op1, Right id1]
-transExpr (CBinary op lhs rhs node) = do
-  lhsBs <- transExpr lhs
-  rhsBs <- transExpr rhs
+  return $ (rhsBs ++ [Left op0, Left op1, Right id1], ty)
+transExpr (CBinary bop lhs rhs node) = do
+  (lhsBs, lhsTy) <- transExpr lhs
+  (rhsBs, rhsTy) <- transExpr rhs
   let lhsId = lastId lhsBs
       rhsId = lastId rhsBs
       loc = getPos node
   id <- freshName
-  let op = id AST.:= Arith.AddI loc (AST.IntegerType AST.Signless 32) lhsId rhsId
-  return $ lhsBs ++ rhsBs ++ [Left op]
+  let isF = case lhsTy of
+              AST.IntegerType _ _ -> False
+              AST.IndexType -> False
+              _ -> True
+      op = id AST.:= (case bop of
+                        CAddOp -> if isF then Arith.AddF else Arith.AddI
+                        CSubOp -> if isF then Arith.SubF else Arith.SubI
+                        CMulOp -> if isF then Arith.MulF else Arith.MulI
+                        CDivOp -> if isF then Arith.DivF else Arith.DivUI
+                        _ -> unsupported bop) loc lhsTy lhsId rhsId
+  return (lhsBs ++ rhsBs ++ [Left op], lhsTy)
 transExpr e = unsupported e
 
-transConst :: CConstant NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
+transConst :: CConstant NodeInfo -> EnvM ([Either AST.Binding BU.ByteString], AST.Type)
 transConst (CIntConst i node) = transInt i (getPos node)
 transConst (CCharConst c node) = transChar c (getPos node)
 transConst (CFloatConst f node) = transFloat f (getPos node)
 transConst (CStrConst s node) = transStr s (getPos node)
 
-transInt :: CInteger -> AST.Location -> EnvM [Either AST.Binding BU.ByteString]
+transInt :: CInteger -> AST.Location -> EnvM ([Either AST.Binding BU.ByteString], AST.Type)
 transInt (CInteger i _ _) loc = do
   id <- freshName
   let ty = AST.IntegerType AST.Signless 32
-  return [Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral i))]
+  return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral i))], ty)
 
-transChar :: CChar -> AST.Location -> EnvM [Either AST.Binding BU.ByteString]
+transChar :: CChar -> AST.Location -> EnvM ([Either AST.Binding BU.ByteString], AST.Type)
 transChar (CChar c _) loc = do
   id <- freshName
   let ty = AST.IntegerType AST.Signless 8
-  return [Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral $ ord c))]
+  return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral $ ord c))], ty)
 transChar c loc = error "unsupported chars"
 
-transFloat :: CFloat -> AST.Location -> EnvM [Either AST.Binding BU.ByteString]
+transFloat :: CFloat -> AST.Location -> EnvM ([Either AST.Binding BU.ByteString], AST.Type)
 transFloat (CFloat str) loc = do
   id <- freshName
   let ty = AST.Float32Type
-  return [Left $ id AST.:= Arith.Constant loc ty (AST.FloatAttr ty $ read str)]
+  return ([Left $ id AST.:= Arith.Constant loc ty (AST.FloatAttr ty $ read str)], ty)
 
-transStr :: CString -> AST.Location -> EnvM [Either AST.Binding BU.ByteString]
+transStr :: CString -> AST.Location -> EnvM ([Either AST.Binding BU.ByteString], AST.Type)
 transStr s@(CString str _) loc = error "xxx"
 
 -- handlers :: DeclEvent -> EnvM ()
