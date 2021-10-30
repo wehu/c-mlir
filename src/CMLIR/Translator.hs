@@ -64,13 +64,11 @@ lookupLabel name = do
     Just l -> return l
     Nothing -> error $ "cannot find label " ++ name
 
+freshName :: EnvM BU.ByteString
 freshName = do
   id <- idCounter <$> getUserState
   modifyUserState (\s -> s{idCounter = idCounter s + 1})
   return $ BU.fromString $ show id
-
-unsupportedM :: (Pretty a, Monad m) => a -> m b
-unsupportedM a = return $ unsupported a
 
 unsupported :: (Pretty a) => a -> b
 unsupported a = error $ "unsupported:\n" ++ show (pretty a)
@@ -92,14 +90,6 @@ translateToMLIR tu =
      check <- MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
      BU.toString <$> MLIR.showOperationWithLocation nativeOp)
-
-getPos :: NodeInfo -> AST.Location
-getPos n = 
-  let pos = posOfNode n
-    in AST.FileLocation 
-        (BU.fromString $ posFile pos)
-        (fromIntegral $ posRow pos)
-        (fromIntegral $ posColumn pos)
 
 transFunction :: FunDef -> EnvM AST.Binding
 transFunction (FunDef var stmt node) = underScope $ do
@@ -248,3 +238,11 @@ params (VarDecl name attr ty) = ps ty
         ps _ = unsupported ty
         f (FunType resType argTypes _) = map paramDecl argTypes
         f (FunTypeIncomplete ty) = unsupported ty
+
+getPos :: NodeInfo -> AST.Location
+getPos n = 
+  let pos = posOfNode n
+    in AST.FileLocation 
+        (BU.fromString $ posFile pos)
+        (fromIntegral $ posRow pos)
+        (fromIntegral $ posColumn pos)
