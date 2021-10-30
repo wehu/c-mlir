@@ -11,6 +11,7 @@ import qualified Data.ByteString.UTF8 as BU
 import qualified MLIR.AST.Dialect.Arith as Arith
 import qualified MLIR.AST.Dialect.Std as Std
 import qualified MLIR.Native as MLIR
+import qualified MLIR.AST.Dialect.MemRef as MemRef
 import qualified CMLIR.Dialect.MemRef as MemRef
 
 import Language.C.Syntax.AST
@@ -39,7 +40,7 @@ data Env = Env {decls :: [Decl],
                 enumerators :: [Enumerator],
                 typeDefs :: [TypeDef],
                 labels :: M.Map String BU.ByteString,
-                vars :: M.Map String BU.ByteString,
+                vars :: M.Map String (BU.ByteString, AST.Type, Bool),
                 idCounter :: Int}
 
 type EnvM = TravT Env Identity
@@ -68,8 +69,8 @@ lookupLabel name = do
     Just l -> return l
     Nothing -> error $ "cannot find label " ++ name
 
-addVar name id =
-  modifyUserState (\s -> s{vars=M.insert name id (vars s)})
+addVar name v =
+  modifyUserState (\s -> s{vars=M.insert name v (vars s)})
 
 lookupVar name = do
   v <- M.lookup name . vars <$> getUserState
@@ -109,7 +110,7 @@ transFunction :: FunDef -> EnvM AST.Binding
 transFunction f@(FunDef var stmt node) = underScope $ do
   let (name, ty) = varDecl var
       args = over (traverse . _1) BU.fromString $ params var
-  mapM_ (uncurry addVar) [(BU.toString a, a) | a <- args ^.. traverse . _1]
+  mapM_ (uncurry addVar) [(BU.toString $ a ^._1, (a ^._1, a^._2, False)) | a <- args]
   b <- transBlock args stmt
   return $ AST.Do $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
 
@@ -139,7 +140,7 @@ transLocalDecl (ObjDef var init node) = do
              t -> AST.MemRefType [Just 1] t Nothing Nothing
       alloc = MemRef.alloca (getPos node) mt [] []
       b = Left $ id AST.:= alloc
-  addVar n id
+  addVar n (id, t, True)
   return [b]
 
 transStmt :: CStatement NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
@@ -157,9 +158,17 @@ transStmt e = unsupported e
 
 transExpr :: CExpression NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
 transExpr (CConst c) = transConst c
-transExpr (CVar ident _) = do
-  id <- lookupVar (identName ident)
-  return [Right id]
+transExpr (CVar ident node) = do
+  (id, ty, isLocal) <- lookupVar (identName ident)
+  if isLocal then do
+    id0 <- freshName
+    let c = Arith.Constant (getPos node) AST.IndexType (AST.IntegerAttr AST.IndexType 0)
+        i0 = id0 AST.:= c
+    id1 <- freshName
+    let ld = MemRef.Load ty id [id0]
+        i1 = id1 AST.:= ld 
+    return [Left i0, Left i1, Right id1]
+  else return [Right id]
 transExpr e = unsupported e
 
 transConst :: CConstant NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
@@ -276,8 +285,12 @@ type_ (ArrayType t size quals attrs) =
 type_ (TypeDefType (TypeDefRef ident t _) quals attrs) = type_ t
 
 arraySize :: ArraySize -> Maybe Int
-arraySize (UnknownArraySize static) = Nothing
-arraySize (ArraySize static expr) = fromIntegral <$> intValue expr
+arraySize (UnknownArraySize static) = 
+  error "unsupported dynamic array size"
+arraySize (ArraySize static expr) = 
+  case intValue expr of
+    Just e -> Just $ fromIntegral e
+    Nothing -> error "unsupported dynamic array size"
 
 paramDecl :: ParamDecl -> (String, AST.Type)
 paramDecl (ParamDecl var _) = varDecl var
