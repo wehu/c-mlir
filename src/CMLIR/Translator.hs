@@ -81,7 +81,6 @@ translateToMLIR tu =
      MLIR.registerAllDialects ctx
      nativeOp <- fromAST ctx (mempty, mempty) $ do
                    let res = runTrav initEnv $ do
-                              -- setDefaultLocation (FileLocation "" 0 0)
                               withExtDeclHandler (analyseAST tu) handlers
                               fs <- getUserState >>= mapM transFunction . funDefs
                               id <- freshName
@@ -97,17 +96,17 @@ translateToMLIR tu =
 getPos :: NodeInfo -> AST.Location
 getPos n = 
   let pos = posOfNode n
-    in AST.FileLocation (BU.fromString (posFile pos)) (fromIntegral $ posRow pos) (fromIntegral $ posColumn pos)
+    in AST.FileLocation 
+        (BU.fromString $ posFile pos)
+        (fromIntegral $ posRow pos)
+        (fromIntegral $ posColumn pos)
 
 transFunction :: FunDef -> EnvM AST.Binding
 transFunction (FunDef var stmt node) = underScope $ do
   let (name, ty) = varDecl var
-  case ty of
-    AST.FunctionType argTypes resultTypes -> do
-      let args = over (traverse . _1) BU.fromString $ params var
-      b <- transBlock args stmt
-      return $ AST.Do $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
-    ty -> error $ "expected a function type, but got " ++ show (pretty var)
+      args = over (traverse . _1) BU.fromString $ params var
+  b <- transBlock args stmt
+  return $ AST.Do $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
 
 transBlock :: [(AST.Name, AST.Type)] -> CStatement NodeInfo -> EnvM AST.Block
 transBlock args (CCompound labels items _) = do
