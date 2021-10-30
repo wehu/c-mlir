@@ -143,16 +143,21 @@ transLocalDecl (ObjDef var init node) = do
   addVar n (id, t, True)
   return [b]
 
+lastId :: [Either AST.Binding BU.ByteString] -> BU.ByteString
+lastId [] = error "no intruction"
+lastId bs =
+  case last bs of
+    Left (n AST.:= v) -> n
+    Right n -> n
+    Left e -> error "unsupported"
+
 transStmt :: CStatement NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
 transStmt (CReturn Nothing node) =
   return [Left $ AST.Do $ Std.Return (getPos node) []]
 transStmt (CReturn (Just e) node) = do
-  results <- transExpr e
-  let id = case last results of
-             Left (n AST.:= v) -> n
-             Right n -> n
-             _ -> unsupported e
-  return $ results ++ [Left $ AST.Do $ Std.Return (getPos node) [id]]
+  bs <- transExpr e
+  let id = lastId bs
+  return $ bs ++ [Left $ AST.Do $ Std.Return (getPos node) [id]]
 transStmt (CExpr (Just e) node) = transExpr e
 transStmt e = unsupported e
 
