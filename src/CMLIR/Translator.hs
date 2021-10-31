@@ -15,6 +15,8 @@ import qualified CMLIR.Dialect.Std as Std
 import qualified MLIR.Native as MLIR
 import qualified MLIR.AST.Dialect.MemRef as MemRef
 import qualified CMLIR.Dialect.MemRef as MemRef
+import qualified MLIR.AST.Dialect.Affine as Affine
+import qualified CMLIR.Dialect.Affine as Affine
 
 import Language.C.Syntax.AST
 import Language.C.Analysis.AstAnalysis
@@ -125,17 +127,18 @@ transFunction f@(FunDef var stmt node) = underScope $ do
       args = over (traverse . _1) BU.fromString $
                over (traverse . _2) fst $ params var
   mapM_ (uncurry addVar) [(a ^._1, (BU.fromString $ a ^._1, a^._2, False)) | a <- params var]
-  b <- transBlock args stmt
+  b <- transBlock args stmt Nothing
   return $ AST.Do $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
 
-transBlock :: [(AST.Name, AST.Type)] -> CStatement NodeInfo -> EnvM AST.Block
-transBlock args (CCompound labels items _) = do
+transBlock :: [(AST.Name, AST.Type)] -> CStatement NodeInfo -> Maybe AST.Binding -> EnvM AST.Block
+transBlock args (CCompound labels items _) terminator = do
   id <- freshName
   -- let lnames = map identName labels
   ops <- join <$> mapM transBlockItem items
   -- forM_ lnames (`addLabel` id)
-  return $ AST.Block id args (ops ^..traverse._Left)
-transBlock args s = unsupported s
+  let term = [fromJust terminator | isn't _Nothing terminator]
+  return $ AST.Block id args (ops ^..traverse._Left ++ term)
+transBlock args s _ = unsupported s
 
 transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [BindingOrName]
 transBlockItem (CBlockStmt s) = transStmt s
@@ -188,6 +191,27 @@ transStmt (CReturn (Just e) node) = do
 transStmt (CExpr (Just e) node) = do
   (bs, ty) <- transExpr e
   return bs
+transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
+                              [(Just (CDeclr (Just ident0) [] Nothing [] _),
+                                Just (CInitExpr lb@(CConst _) _),
+                                Nothing)] _))
+                (Just (CBinary CLeOp (CVar ident1 _) ub@(CConst _) _))
+                (Just (CAssign CAddAssOp (CVar ident2 _) step@(CConst _) _)) body node)
+  | ident0 == ident1 && ident1 == ident2 = do
+  let name = identName ident0
+  b <- underScope $ do
+    addVar name (BU.fromString name, (AST.IndexType, True), True)
+    transBlock [(BU.fromString name, AST.IndexType)] body
+      (Just $ AST.Do $ Affine.yield (getPos node) [] [])
+  --(lbBs, _) <- transExpr lb
+  --(ubBs, _) <- transExpr ub
+  let for = AST.Do $ Affine.for
+                  (getPos node)
+                  (fromIntegral $ fromJust $ intValue lb)
+                  (fromIntegral $ fromJust $ intValue ub)
+                  (fromIntegral $ fromJust $ intValue step)
+                  $ AST.Region [b]
+  return [Left for]
 transStmt e = unsupported e
 
 const0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
