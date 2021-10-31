@@ -250,6 +250,25 @@ transExpr (CCond cond (Just lhs) rhs node) = do
   let sel = id AST.:= Std.Select (getPos node) lhsTy (lastId condBs) (lastId lhsBs) (lastId rhsBs)
   return (condBs ++ lhsBs ++ rhsBs ++ 
           [Left sel, Right id], (lhsTy, lhsSign))
+transExpr (CIndex e index node) = do
+  let (src, indices) = collectIndices e [index]
+  let name = case src of
+               CVar ident _ -> identName ident
+               _ -> unsupported src
+  (srcId, (srcTy, sign), isLocal) <- lookupVar name
+  indexBs <- mapM transExpr indices
+  let indexIds = map lastId (indexBs ^.. traverse . _1)
+  let ty = case srcTy of
+             AST.MemRefType _ ty _ _ -> ty
+             _ -> unsupported src
+  id <- freshName
+  let ld = id AST.:= MemRef.Load ty srcId indexIds
+  return (join (indexBs ^.. traverse . _1) ++ [Left ld, Right id], (ty, sign))
+  where
+    collectIndices src indices =
+      case src of
+        (CIndex src' index' _) -> (src', index':indices)
+        _ -> (src, indices)
 transExpr e = unsupported e
 
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)
