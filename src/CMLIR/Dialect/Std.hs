@@ -3,7 +3,6 @@
 module CMLIR.Dialect.Std where
 
 import MLIR.AST
-import Data.Array.IArray
 import Data.ByteString.UTF8
 
 call :: Location -> Type -> ByteString -> [Name] -> Operation

@@ -3,7 +3,6 @@
 module CMLIR.Dialect.Arith where
 
 import MLIR.AST
-import Data.Array.IArray
 
 cmpf :: Int -> Location -> Type -> Name -> Name -> Operation
 cmpf op loc ty lhs rhs = Operation

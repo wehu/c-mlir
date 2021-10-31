@@ -2,10 +2,8 @@ module CMLIR.Parser where
 
 import Language.C
 import Language.C.Analysis.AstAnalysis
-import Language.C.Syntax.AST
 import Language.C.Analysis.TravMonad
 import Language.C.System.GCC
-import Language.C.Pretty
 import Control.Monad
 import System.IO
 import System.Exit
