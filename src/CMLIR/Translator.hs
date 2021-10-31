@@ -9,6 +9,7 @@ import qualified MLIR.AST as AST
 import MLIR.AST.Serialize
 import qualified Data.ByteString.UTF8 as BU
 import qualified MLIR.AST.Dialect.Arith as Arith
+import qualified CMLIR.Dialect.Arith as Arith
 import qualified MLIR.AST.Dialect.Std as Std
 import qualified MLIR.Native as MLIR
 import qualified MLIR.AST.Dialect.MemRef as MemRef
@@ -193,7 +194,7 @@ transExpr (CAssign CAssignOp (CVar ident _) rhs node) = do
   id1 <- freshName
   let st = MemRef.Store rhsId id [id0]
       op1 = id1 AST.:= st
-  return $ (rhsBs ++ [Left op0, Left op1, Right id1], ty)
+  return (rhsBs ++ [Left op0, Left op1, Right id1], ty)
 transExpr (CBinary bop lhs rhs node) = do
   (lhsBs, (lhsTy, lhsSign)) <- transExpr lhs
   (rhsBs, (rhsTy, rhsSign)) <- transExpr rhs
@@ -218,7 +219,13 @@ transExpr (CBinary bop lhs rhs node) = do
                         CLndOp -> Arith.AndI
                         CLorOp -> Arith.OrI
                         CXorOp -> Arith.XOrI
-                        _ -> unsupported bop) loc lhsTy lhsId rhsId
+                        CEqOp -> if isF then Arith.cmpf 1 else Arith.cmpi 0
+                        CNeqOp -> if isF then Arith.cmpf 6 else Arith.cmpi 1
+                        CLeOp -> if isF then Arith.cmpf 4 else (if lhsSign then Arith.cmpi 2 else Arith.cmpi 6)
+                        CGrOp -> if isF then Arith.cmpf 2 else (if lhsSign then Arith.cmpi 4 else Arith.cmpi 8)
+                        CLeqOp -> if isF then Arith.cmpf 5 else (if lhsSign then Arith.cmpi 3 else Arith.cmpi 7)
+                        CGeqOp -> if isF then Arith.cmpf 3 else (if lhsSign then Arith.cmpi 5 else Arith.cmpi 9)
+                        ) loc lhsTy lhsId rhsId
   return (lhsBs ++ rhsBs ++ [Left op], (lhsTy, lhsSign))
 transExpr e = unsupported e
 

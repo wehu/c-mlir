@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       CMLIR
+      CMLIR.Dialect.Arith
       CMLIR.Dialect.MemRef
       CMLIR.Parser
       CMLIR.Translator
