@@ -238,6 +238,10 @@ transExpr (CBinary bop lhs rhs node) = do
                         CGeqOp -> if isF then Arith.cmpf 3 else (if lhsSign then Arith.cmpi 5 else Arith.cmpi 9)
                         ) loc lhsTy lhsId rhsId
   return (lhsBs ++ rhsBs ++ [Left op], (lhsTy, lhsSign))
+transExpr (CComma es _) = do
+  bs <- mapM transExpr es
+  let ty = last bs ^._2
+  return (join (bs ^..traverse._1), ty)
 transExpr e = unsupported e
 
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)
