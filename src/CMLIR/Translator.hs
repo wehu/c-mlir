@@ -2,6 +2,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ParallelListComp #-}
 module CMLIR.Translator where
 
 import qualified MLIR.AST.Builder as AST
@@ -200,7 +201,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
   | ident0 == ident1 && ident1 == ident2 = do
   let name = identName ident0
   b <- underScope $ do
-    addVar name (BU.fromString name, (AST.IndexType, True), True)
+    addVar name (BU.fromString name, (AST.IndexType, True), False)
     transBlock [(BU.fromString name, AST.IndexType)] body
       (Just $ AST.Do $ Affine.yield (getPos node) [] [])
   let for = AST.Do $ Affine.for
@@ -257,7 +258,7 @@ transExpr (CAssign op lhs rhs node) = do
   else do
     indexBs <- mapM transExpr indices
     let indexIds = map lastId (indexBs ^.. traverse . _1)
-    toIndices <- mapM (toIndex (getPos node)) indexIds
+    toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
     let (dstTy, sign) = case ty of
                   (AST.MemRefType _ ty _ _, sign) -> (ty, sign)
                   _ -> unsupported src
@@ -317,7 +318,7 @@ transExpr (CIndex e index node) = do
   (srcId, (srcTy, sign), isLocal) <- lookupVar name
   indexBs <- mapM transExpr indices
   let indexIds = map lastId (indexBs ^.. traverse . _1)
-  toIndices <- mapM (toIndex (getPos node)) indexIds
+  toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
   let ty = case srcTy of
              AST.MemRefType _ ty _ _ -> ty
              _ -> unsupported src
@@ -387,7 +388,9 @@ collectIndices src indices =
         (CIndex src' index' _) -> collectIndices src' (index':indices)
         _ -> (src, indices)
 
-toIndex loc i = (\id -> (Left $ id AST.:= Arith.IndexCast loc AST.IndexType i, id)) <$> freshName
+toIndex loc i srcTy =
+  if srcTy == AST.IndexType then return (Right i, i)
+  else (\id -> (Left $ id AST.:= Arith.IndexCast loc AST.IndexType i, id)) <$> freshName
 
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)
 transConst (CIntConst i node) = transInt i (getPos node)
