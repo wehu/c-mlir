@@ -17,6 +17,7 @@ import qualified CMLIR.Dialect.MemRef as MemRef
 
 import Language.C.Syntax.AST
 import Language.C.Analysis.AstAnalysis
+import Language.C.Analysis.DeclAnalysis
 import Language.C.Analysis.TravMonad
 import Language.C.Analysis.SemRep
 import Language.C.Analysis.ConstEval
@@ -109,7 +110,7 @@ translateToMLIR tu =
      --MLIR.dump nativeOp
      check <- MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
-     BU.toString <$> MLIR.showOperationWithLocation nativeOp)
+     BU.toString <$> MLIR.showOperation {-WithLocation-} nativeOp)
 
 transFunction :: FunDef -> EnvM AST.Binding
 transFunction f@(FunDef var stmt node) = underScope $ do
@@ -220,7 +221,7 @@ transExpr (CAssign op lhs rhs node) = do
                   _ -> unsupported src
     stId <- freshName
     let st = id AST.:= MemRef.Store rhsId id (toIndices ^.. traverse . _2)
-    return (rhsBs ++ join (indexBs ^.. traverse . _1) ++ 
+    return (rhsBs ++ join (indexBs ^.. traverse . _1) ++
             toIndices ^.. traverse . _1 ++ [Left st, Right stId], (dstTy, sign))
 transExpr (CBinary bop lhs rhs node) = do
   (lhsBs, (lhsTy, lhsSign)) <- transExpr lhs
@@ -240,7 +241,7 @@ transExpr (CBinary bop lhs rhs node) = do
                         CDivOp -> if isF then Arith.DivF else (if lhsSign then Arith.DivSI else Arith.DivUI)
                         CRmdOp -> if isF then Arith.RemF else (if lhsSign then Arith.RemSI else Arith.RemUI)
                         CShlOp -> Arith.ShLI
-                        CShrOp -> if lhsSign then Arith.ShRSI else Arith.ShRUI 
+                        CShrOp -> if lhsSign then Arith.ShRSI else Arith.ShRUI
                         CAndOp -> Arith.AndI
                         COrOp -> Arith.OrI
                         CLndOp -> Arith.AndI
@@ -264,7 +265,7 @@ transExpr (CCond cond (Just lhs) rhs node) = do
   (rhsBs, (rhsTy, rhsSign)) <- transExpr rhs
   id <- freshName
   let sel = id AST.:= Std.Select (getPos node) lhsTy (lastId condBs) (lastId lhsBs) (lastId rhsBs)
-  return (condBs ++ lhsBs ++ rhsBs ++ 
+  return (condBs ++ lhsBs ++ rhsBs ++
           [Left sel, Right id], (lhsTy, lhsSign))
 transExpr (CIndex e index node) = do
   let (src, indices) = collectIndices e [index]
@@ -280,8 +281,52 @@ transExpr (CIndex e index node) = do
              _ -> unsupported src
   id <- freshName
   let ld = id AST.:= MemRef.Load ty srcId (toIndices ^.. traverse . _2)
-  return (join (indexBs ^.. traverse . _1) ++ 
+  return (join (indexBs ^.. traverse . _1) ++
           toIndices ^.. traverse . _1 ++ [Left ld, Right id], (ty, sign))
+transExpr c@(CCast t e node) = do
+  (srcBs, (srcTy, srcSign)) <- transExpr e
+  (dstTy, dstSign) <- type_ <$> analyseTypeDecl t
+  if srcTy == dstTy then return (srcBs, (srcTy, srcSign))
+  else do
+    dstId <- freshName
+    id <- freshName
+    let loc = getPos node
+        srcId = lastId srcBs
+        casts
+          | isFloat srcTy && isFloat dstTy =
+            [Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncF else Arith.ExtF) loc dstTy srcId]
+          | isInt srcTy && isInt dstTy =
+            [Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc dstTy srcId]
+          | isFloat srcTy && isInt dstTy && bits srcTy == bits dstTy =
+            [Left $ dstId AST.:= (if srcSign then Arith.FPToSI else Arith.FPToUI) loc (AST.IntegerType AST.Signless (bits srcTy)) srcId]
+          | isFloat srcTy && isInt dstTy =
+            [Left $ id AST.:= (if srcSign then Arith.FPToSI else Arith.FPToUI) loc (AST.IntegerType AST.Signless (bits srcTy)) srcId
+            ,Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc dstTy id]
+          | isInt srcTy && isFloat dstTy && bits srcTy == bits dstTy =
+            [Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc (floatTy $ bits srcTy) srcId]
+          | otherwise =
+            [Left $ id AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc (floatTy $ bits srcTy) srcId
+            ,Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncF else Arith.ExtF) loc dstTy id]
+    return (srcBs ++ casts ++ [Right dstId], (dstTy, dstSign))
+  where isFloat ty = case ty of
+                       AST.Float16Type -> True
+                       AST.Float32Type -> True
+                       AST.Float64Type -> True
+                       _ -> False
+        floatTy bits = case bits of
+                         16 -> AST.Float16Type
+                         32 -> AST.Float32Type
+                         64 -> AST.Float64Type 
+                         _ -> unsupported c
+        isInt ty = case ty of
+                     AST.IntegerType _ _ -> True
+                     _ -> False
+        bits ty = case ty of
+                    AST.Float16Type -> 16
+                    AST.Float32Type -> 32
+                    AST.Float64Type -> 64
+                    AST.IntegerType _ bs -> bs
+                    _ -> unsupported c
 transExpr e = unsupported e
 
 collectIndices src indices =
