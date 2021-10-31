@@ -258,18 +258,22 @@ transExpr (CIndex e index node) = do
   (srcId, (srcTy, sign), isLocal) <- lookupVar name
   indexBs <- mapM transExpr indices
   let indexIds = map lastId (indexBs ^.. traverse . _1)
+  toIndices <- mapM (toIndex (getPos node)) indexIds
   let ty = case srcTy of
              AST.MemRefType _ ty _ _ -> ty
              _ -> unsupported src
   id <- freshName
-  let ld = id AST.:= MemRef.Load ty srcId indexIds
-  return (join (indexBs ^.. traverse . _1) ++ [Left ld, Right id], (ty, sign))
+  let ld = id AST.:= MemRef.Load ty srcId (toIndices ^.. traverse . _2)
+  return (join (indexBs ^.. traverse . _1) ++ 
+          toIndices ^.. traverse . _1 ++ [Left ld, Right id], (ty, sign))
   where
     collectIndices src indices =
       case src of
-        (CIndex src' index' _) -> (src', index':indices)
+        (CIndex src' index' _) -> collectIndices src' (index':indices)
         _ -> (src, indices)
 transExpr e = unsupported e
+
+toIndex loc i = (\id -> (Left $ id AST.:= Arith.IndexCast loc AST.IndexType i, id)) <$> freshName
 
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)
 transConst (CIntConst i node) = transInt i (getPos node)
