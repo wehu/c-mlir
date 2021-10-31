@@ -184,8 +184,12 @@ transExpr (CVar ident node) = do
         op1 = id1 AST.:= ld
     return ([Left op0, Left op1, Right id1], (ty, sign))
   else return ([Right id], (ty, sign))
-transExpr (CAssign op lhs@(CVar ident _) rhs node) = do
-  (id, ty, isLocal) <- lookupVar (identName ident)
+transExpr (CAssign op lhs rhs node) = do
+  let (src, indices) = collectIndices lhs []
+  let name = case src of
+               CVar ident _ -> identName ident
+               _ -> unsupported src
+  (id, ty, isLocal) <- lookupVar name
   (rhsBs, rhsTy) <- transExpr (case op of
                       CAssignOp -> rhs
                       CMulAssOp -> CBinary CAddOp lhs rhs node
@@ -199,13 +203,25 @@ transExpr (CAssign op lhs@(CVar ident _) rhs node) = do
                       CXorAssOp -> CBinary CXorOp lhs rhs node
                       COrAssOp -> CBinary COrOp lhs rhs node)
   let rhsId = lastId rhsBs
-  id0 <- freshName
-  let c = const0 (getPos node)
-      op0 = id0 AST.:= c
-  id1 <- freshName
-  let st = MemRef.Store rhsId id [id0]
-      op1 = id1 AST.:= st
-  return (rhsBs ++ [Left op0, Left op1, Right id1], ty)
+  if null indices then do
+    id0 <- freshName
+    let c = const0 (getPos node)
+        op0 = id0 AST.:= c
+    id1 <- freshName
+    let st = MemRef.Store rhsId id [id0]
+        op1 = id1 AST.:= st
+    return (rhsBs ++ [Left op0, Left op1, Right id1], ty)
+  else do
+    indexBs <- mapM transExpr indices
+    let indexIds = map lastId (indexBs ^.. traverse . _1)
+    toIndices <- mapM (toIndex (getPos node)) indexIds
+    let (dstTy, sign) = case ty of
+                  (AST.MemRefType _ ty _ _, sign) -> (ty, sign)
+                  _ -> unsupported src
+    stId <- freshName
+    let st = id AST.:= MemRef.Store rhsId id (toIndices ^.. traverse . _2)
+    return (rhsBs ++ join (indexBs ^.. traverse . _1) ++ 
+            toIndices ^.. traverse . _1 ++ [Left st, Right stId], (dstTy, sign))
 transExpr (CBinary bop lhs rhs node) = do
   (lhsBs, (lhsTy, lhsSign)) <- transExpr lhs
   (rhsBs, (rhsTy, rhsSign)) <- transExpr rhs
@@ -266,12 +282,12 @@ transExpr (CIndex e index node) = do
   let ld = id AST.:= MemRef.Load ty srcId (toIndices ^.. traverse . _2)
   return (join (indexBs ^.. traverse . _1) ++ 
           toIndices ^.. traverse . _1 ++ [Left ld, Right id], (ty, sign))
-  where
-    collectIndices src indices =
+transExpr e = unsupported e
+
+collectIndices src indices =
       case src of
         (CIndex src' index' _) -> collectIndices src' (index':indices)
         _ -> (src, indices)
-transExpr e = unsupported e
 
 toIndex loc i = (\id -> (Left $ id AST.:= Arith.IndexCast loc AST.IndexType i, id)) <$> freshName
 
