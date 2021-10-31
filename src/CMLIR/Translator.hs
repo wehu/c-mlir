@@ -304,9 +304,10 @@ transExpr c@(CCast t e node) = do
             ,Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc dstTy id]
           | isInt srcTy && isFloat dstTy && bits srcTy == bits dstTy =
             [Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc (floatTy $ bits srcTy) srcId]
-          | otherwise =
+          | isInt srcTy && isFloat dstTy =
             [Left $ id AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc (floatTy $ bits srcTy) srcId
             ,Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncF else Arith.ExtF) loc dstTy id]
+          | otherwise = unsupported c
     return (srcBs ++ casts ++ [Right dstId], (dstTy, dstSign))
   where isFloat ty = case ty of
                        AST.Float16Type -> True
