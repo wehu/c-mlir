@@ -210,9 +210,24 @@ transExpr (CBinary bop lhs rhs node) = do
                         CSubOp -> if isF then Arith.SubF else Arith.SubI
                         CMulOp -> if isF then Arith.MulF else Arith.MulI
                         CDivOp -> if isF then Arith.DivF else (if lhsSign then Arith.DivSI else Arith.DivUI)
+                        CRmdOp -> if isF then Arith.RemF else (if lhsSign then Arith.RemSI else Arith.RemUI)
+                        CShlOp -> Arith.ShLI
+                        CShrOp -> if lhsSign then Arith.ShRSI else Arith.ShRUI 
+                        CAndOp -> Arith.AndI
+                        COrOp -> Arith.OrI
+                        CLndOp -> Arith.AndI
+                        CLorOp -> Arith.OrI
+                        CXorOp -> Arith.XOrI
                         _ -> unsupported bop) loc lhsTy lhsId rhsId
   return (lhsBs ++ rhsBs ++ [Left op], (lhsTy, lhsSign))
 transExpr e = unsupported e
+
+-- CLeOp	
+-- CGrOp	
+-- CLeqOp	
+-- CGeqOp	
+-- CEqOp	
+-- CNeqOp	
 
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)
 transConst (CIntConst i node) = transInt i (getPos node)
