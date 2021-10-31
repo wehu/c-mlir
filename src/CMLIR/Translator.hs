@@ -184,9 +184,20 @@ transExpr (CVar ident node) = do
         op1 = id1 AST.:= ld
     return ([Left op0, Left op1, Right id1], (ty, sign))
   else return ([Right id], (ty, sign))
-transExpr (CAssign CAssignOp (CVar ident _) rhs node) = do
+transExpr (CAssign op lhs@(CVar ident _) rhs node) = do
   (id, ty, isLocal) <- lookupVar (identName ident)
-  (rhsBs, rhsTy) <- transExpr rhs
+  (rhsBs, rhsTy) <- transExpr (case op of
+                      CAssignOp -> rhs
+                      CMulAssOp -> CBinary CAddOp lhs rhs node
+                      CDivAssOp -> CBinary CDivOp lhs rhs node
+                      CRmdAssOp -> CBinary CRmdOp lhs rhs node
+                      CAddAssOp -> CBinary CAddOp lhs rhs node
+                      CSubAssOp -> CBinary CSubOp lhs rhs node
+                      CShlAssOp -> CBinary CShlOp lhs rhs node
+                      CShrAssOp -> CBinary CShrOp lhs rhs node
+                      CAndAssOp -> CBinary CAndOp lhs rhs node
+                      CXorAssOp -> CBinary CXorOp lhs rhs node
+                      COrAssOp -> CBinary COrOp lhs rhs node)
   let rhsId = lastId rhsBs
   id0 <- freshName
   let c = const0 (getPos node)
@@ -228,13 +239,6 @@ transExpr (CBinary bop lhs rhs node) = do
                         ) loc lhsTy lhsId rhsId
   return (lhsBs ++ rhsBs ++ [Left op], (lhsTy, lhsSign))
 transExpr e = unsupported e
-
--- CLeOp	
--- CGrOp	
--- CLeqOp	
--- CGeqOp	
--- CEqOp	
--- CNeqOp	
 
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)
 transConst (CIntConst i node) = transInt i (getPos node)
