@@ -242,6 +242,14 @@ transExpr (CComma es _) = do
   bs <- mapM transExpr es
   let ty = last bs ^._2
   return (join (bs ^..traverse._1), ty)
+transExpr (CCond cond (Just lhs) rhs node) = do
+  (condBs, (condTy, condSign)) <- transExpr cond
+  (lhsBs, (lhsTy, lhsSign)) <- transExpr lhs
+  (rhsBs, (rhsTy, rhsSign)) <- transExpr rhs
+  id <- freshName
+  let sel = id AST.:= Std.Select (getPos node) lhsTy (lastId condBs) (lastId lhsBs) (lastId rhsBs)
+  return (condBs ++ lhsBs ++ rhsBs ++ 
+          [Left sel, Right id], (lhsTy, lhsSign))
 transExpr e = unsupported e
 
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)
