@@ -127,7 +127,7 @@ transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [Either AST.Binding BU.Byt
 transBlockItem (CBlockStmt s) = transStmt s
 transBlockItem (CBlockDecl decl) = do
   modifyUserState (\s -> s{objDefs=[]})
-  withExtDeclHandler (analyseDecl True decl) handleVDecl
+  withExtDeclHandler (analyseDecl True decl) handleLDecl
   getUserState >>= (\s -> join <$> mapM transLocalDecl (objDefs s))
 transBlockItem s = unsupported s
 
@@ -235,34 +235,24 @@ transFloat (CFloat str) loc = do
   return ([Left $ id AST.:= Arith.Constant loc ty (AST.FloatAttr ty $ read str)], ty)
 
 transStr :: CString -> AST.Location -> EnvM ([Either AST.Binding BU.ByteString], AST.Type)
-transStr s@(CString str _) loc = error "xxx"
-
--- handlers :: DeclEvent -> EnvM ()
--- handlers e@(TagEvent tagDef) = handleTag e
--- handlers (DeclEvent identDecl) = handleIdentDecl identDecl
--- handlers e@(ParamEvent paramDecl) = handleParam e
--- handlers (LocalEvent identDecl) = handleIdentDecl identDecl
--- handlers (TypeDefEvent typeDef) = handleTypeDecl typeDef
--- handlers (AsmEvent asmBlock) = handleAsm asmBlock
+transStr s@(CString str _) loc = error $ "unsupported for string " ++ str
 
 handleTag :: DeclEvent -> EnvM ()
 handleTag (TagEvent (CompDef compT)) = return ()
 handleTag (TagEvent (EnumDef enumT)) = return ()
 handleTag _ = return ()
 
--- handleIdentDecl :: IdentDecl -> EnvM ()
--- handleIdentDecl (Declaration decl) = modifyUserState (\s -> s{decls=decls s ++ [decl]})
--- handleIdentDecl (ObjectDef objDef) = modifyUserState (\s -> s{objDefs=objDefs s ++ [objDef]})
--- handleIdentDecl (FunctionDef funDef) = modifyUserState (\s -> s{funDefs=funDefs s ++ [funDef]})
--- handleIdentDecl (EnumeratorDef enumerator) = modifyUserState (\s -> s{enumerators=enumerators s ++ [enumerator]})
+handleGDecl :: DeclEvent -> EnvM ()
+handleGDecl (DeclEvent (Declaration objDef)) = return ()
+handleGDecl _ = return ()
 
 handleFDef :: DeclEvent -> EnvM ()
 handleFDef (DeclEvent (FunctionDef funDef)) = modifyUserState (\s -> s{funDefs=funDefs s ++ [funDef]})
 handleFDef _ = return ()
 
-handleVDecl :: DeclEvent -> EnvM ()
-handleVDecl (LocalEvent (ObjectDef objDef)) = modifyUserState (\s -> s{objDefs=objDefs s ++ [objDef]})
-handleVDecl _ = return ()
+handleLDecl :: DeclEvent -> EnvM ()
+handleLDecl (LocalEvent (ObjectDef objDef)) = modifyUserState (\s -> s{objDefs=objDefs s ++ [objDef]})
+handleLDecl _ = return ()
 
 handleParam :: DeclEvent -> EnvM ()
 handleParam (ParamEvent p) = return ()
