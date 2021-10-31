@@ -34,16 +34,20 @@ import qualified Data.Map as M
 import System.Exit
 import Debug.Trace
 
+type SType = (AST.Type, Bool)
+
 data Env = Env {decls :: [Decl],
                 objDefs :: [ObjDef],
                 funDefs :: [FunDef],
                 enumerators :: [Enumerator],
                 typeDefs :: [TypeDef],
                 labels :: M.Map String BU.ByteString,
-                vars :: M.Map String (BU.ByteString, AST.Type, Bool),
+                vars :: M.Map String (BU.ByteString, SType, Bool),
                 idCounter :: Int}
 
 type EnvM = TravT Env Identity
+
+type BindingOrName = Either AST.Binding BU.ByteString
 
 initEnv = Env{decls = [],
               objDefs = [],
@@ -108,9 +112,10 @@ translateToMLIR tu =
 
 transFunction :: FunDef -> EnvM AST.Binding
 transFunction f@(FunDef var stmt node) = underScope $ do
-  let (name, ty) = varDecl var
-      args = over (traverse . _1) BU.fromString $ params var
-  mapM_ (uncurry addVar) [(BU.toString $ a ^._1, (a ^._1, a^._2, False)) | a <- args]
+  let (name, (ty, sign)) = varDecl var
+      args = over (traverse . _1) BU.fromString $
+               over (traverse . _2) fst $ params var
+  mapM_ (uncurry addVar) [(a ^._1, (BU.fromString $ a ^._1, a^._2, False)) | a <- params var]
   b <- transBlock args stmt
   return $ AST.Do $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
 
@@ -123,7 +128,7 @@ transBlock args (CCompound labels items _) = do
   return $ AST.Block id args (ops ^..traverse._Left)
 transBlock args s = unsupported s
 
-transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
+transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [BindingOrName]
 transBlockItem (CBlockStmt s) = transStmt s
 transBlockItem (CBlockDecl decl) = do
   modifyUserState (\s -> s{objDefs=[]})
@@ -131,19 +136,19 @@ transBlockItem (CBlockDecl decl) = do
   getUserState >>= (\s -> join <$> mapM transLocalDecl (objDefs s))
 transBlockItem s = unsupported s
 
-transLocalDecl :: ObjDef -> EnvM [Either AST.Binding BU.ByteString]
+transLocalDecl :: ObjDef -> EnvM [BindingOrName]
 transLocalDecl (ObjDef var init node) = do
   id <- freshName
   let (n, t) = varDecl var
       mt = case t of
-             AST.MemRefType{} -> t
-             t -> AST.MemRefType [Just 1] t Nothing Nothing
+             (t@AST.MemRefType{}, _) -> t
+             (t, _) -> AST.MemRefType [Just 1] t Nothing Nothing
       alloc = MemRef.alloca (getPos node) mt [] []
       b = Left $ id AST.:= alloc
   addVar n (id, t, True)
   return [b]
 
-lastId :: [Either AST.Binding BU.ByteString] -> BU.ByteString
+lastId :: [BindingOrName] -> BU.ByteString
 lastId [] = error "no intruction"
 lastId bs =
   case last bs of
@@ -151,7 +156,7 @@ lastId bs =
     Right n -> n
     Left e -> error "unsupported"
 
-transStmt :: CStatement NodeInfo -> EnvM [Either AST.Binding BU.ByteString]
+transStmt :: CStatement NodeInfo -> EnvM [BindingOrName]
 transStmt (CReturn Nothing node) =
   return [Left $ AST.Do $ Std.Return (getPos node) []]
 transStmt (CReturn (Just e) node) = do
@@ -165,10 +170,10 @@ transStmt e = unsupported e
 
 const0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
 
-transExpr :: CExpression NodeInfo -> EnvM ([Either AST.Binding BU.ByteString], AST.Type)
+transExpr :: CExpression NodeInfo -> EnvM ([BindingOrName], SType)
 transExpr (CConst c) = transConst c
 transExpr (CVar ident node) = do
-  (id, ty, isLocal) <- lookupVar (identName ident)
+  (id, (ty, sign), isLocal) <- lookupVar (identName ident)
   if isLocal then do
     id0 <- freshName
     let c = const0 (getPos node)
@@ -176,8 +181,8 @@ transExpr (CVar ident node) = do
     id1 <- freshName
     let ld = MemRef.Load ty id [id0]
         op1 = id1 AST.:= ld
-    return ([Left op0, Left op1, Right id1], ty)
-  else return ([Right id], ty)
+    return ([Left op0, Left op1, Right id1], (ty, sign))
+  else return ([Right id], (ty, sign))
 transExpr (CAssign CAssignOp (CVar ident _) rhs node) = do
   (id, ty, isLocal) <- lookupVar (identName ident)
   (rhsBs, rhsTy) <- transExpr rhs
@@ -190,8 +195,8 @@ transExpr (CAssign CAssignOp (CVar ident _) rhs node) = do
       op1 = id1 AST.:= st
   return $ (rhsBs ++ [Left op0, Left op1, Right id1], ty)
 transExpr (CBinary bop lhs rhs node) = do
-  (lhsBs, lhsTy) <- transExpr lhs
-  (rhsBs, rhsTy) <- transExpr rhs
+  (lhsBs, (lhsTy, lhsSign)) <- transExpr lhs
+  (rhsBs, (rhsTy, rhsSign)) <- transExpr rhs
   let lhsId = lastId lhsBs
       rhsId = lastId rhsBs
       loc = getPos node
@@ -204,37 +209,37 @@ transExpr (CBinary bop lhs rhs node) = do
                         CAddOp -> if isF then Arith.AddF else Arith.AddI
                         CSubOp -> if isF then Arith.SubF else Arith.SubI
                         CMulOp -> if isF then Arith.MulF else Arith.MulI
-                        CDivOp -> if isF then Arith.DivF else Arith.DivUI
+                        CDivOp -> if isF then Arith.DivF else (if lhsSign then Arith.DivSI else Arith.DivUI)
                         _ -> unsupported bop) loc lhsTy lhsId rhsId
-  return (lhsBs ++ rhsBs ++ [Left op], lhsTy)
+  return (lhsBs ++ rhsBs ++ [Left op], (lhsTy, lhsSign))
 transExpr e = unsupported e
 
-transConst :: CConstant NodeInfo -> EnvM ([Either AST.Binding BU.ByteString], AST.Type)
+transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)
 transConst (CIntConst i node) = transInt i (getPos node)
 transConst (CCharConst c node) = transChar c (getPos node)
 transConst (CFloatConst f node) = transFloat f (getPos node)
 transConst (CStrConst s node) = transStr s (getPos node)
 
-transInt :: CInteger -> AST.Location -> EnvM ([Either AST.Binding BU.ByteString], AST.Type)
+transInt :: CInteger -> AST.Location -> EnvM ([BindingOrName], SType)
 transInt (CInteger i _ _) loc = do
   id <- freshName
   let ty = AST.IntegerType AST.Signless 32
-  return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral i))], ty)
+  return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral i))], (ty, True))
 
-transChar :: CChar -> AST.Location -> EnvM ([Either AST.Binding BU.ByteString], AST.Type)
+transChar :: CChar -> AST.Location -> EnvM ([BindingOrName], SType)
 transChar (CChar c _) loc = do
   id <- freshName
   let ty = AST.IntegerType AST.Signless 8
-  return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral $ ord c))], ty)
+  return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral $ ord c))], (ty, True))
 transChar c loc = error "unsupported chars"
 
-transFloat :: CFloat -> AST.Location -> EnvM ([Either AST.Binding BU.ByteString], AST.Type)
+transFloat :: CFloat -> AST.Location -> EnvM ([BindingOrName], SType)
 transFloat (CFloat str) loc = do
   id <- freshName
   let ty = AST.Float32Type
-  return ([Left $ id AST.:= Arith.Constant loc ty (AST.FloatAttr ty $ read str)], ty)
+  return ([Left $ id AST.:= Arith.Constant loc ty (AST.FloatAttr ty $ read str)], (ty, True))
 
-transStr :: CString -> AST.Location -> EnvM ([Either AST.Binding BU.ByteString], AST.Type)
+transStr :: CString -> AST.Location -> EnvM ([BindingOrName], SType)
 transStr s@(CString str _) loc = error $ "unsupported for string " ++ str
 
 handleTag :: DeclEvent -> EnvM ()
@@ -273,31 +278,32 @@ varName :: VarName -> String
 varName (VarName ident _) = identName ident
 varName NoName = ""
 
-type_ :: Type -> AST.Type
+type_ :: Type -> SType
 type_ (FunctionType ty attrs) = f ty
   where f (FunType resType argTypes _) =
-            AST.FunctionType (map (\t -> paramDecl t ^. _2) argTypes) (map type_ [resType])
+            (AST.FunctionType (map (\t -> paramDecl t ^. _2 . _1) argTypes)
+                              (map (\t -> type_ t ^._1) [resType]), False)
         f (FunTypeIncomplete ty) = type_ ty
 type_ ty@(DirectType name quals attrs) =
   case name of
-    TyVoid -> AST.NoneType
-    TyIntegral (id -> TyBool) -> AST.IntegerType AST.Signless 1
-    TyIntegral (id -> TyChar) -> AST.IntegerType AST.Signless 8
-    TyIntegral (id -> TySChar) -> AST.IntegerType AST.Signless 8
-    TyIntegral (id -> TyUChar) -> AST.IntegerType AST.Signless 8
-    TyIntegral (id -> TyShort) -> AST.IntegerType AST.Signless 16
-    TyIntegral (id -> TyUShort) -> AST.IntegerType AST.Signless 16
-    TyIntegral (id -> TyInt) -> AST.IntegerType AST.Signless 32
-    TyIntegral (id -> TyUInt) -> AST.IntegerType AST.Signless 32
-    TyIntegral (id -> TyInt128) -> AST.IntegerType AST.Signless 128
-    TyIntegral (id -> TyUInt128) -> AST.IntegerType AST.Signless 128
-    TyIntegral (id -> TyLong) -> AST.IntegerType AST.Signless 64
-    TyIntegral (id -> TyULong) -> AST.IntegerType AST.Signless 64
-    TyIntegral (id -> TyLLong) -> AST.IntegerType AST.Signless 64
-    TyIntegral (id -> TyULLong) -> AST.IntegerType AST.Signless 64
-    TyFloating (id -> TyFloat) -> AST.Float32Type
-    TyFloating (id -> TyDouble) -> AST.Float64Type
-    TyFloating (id -> TyLDouble) -> AST.Float64Type
+    TyVoid -> (AST.NoneType, False)
+    TyIntegral (id -> TyBool) -> (AST.IntegerType AST.Signless 1, False)
+    TyIntegral (id -> TyChar) -> (AST.IntegerType AST.Signless 8, True)
+    TyIntegral (id -> TySChar) -> (AST.IntegerType AST.Signless 8, True)
+    TyIntegral (id -> TyUChar) -> (AST.IntegerType AST.Signless 8, False)
+    TyIntegral (id -> TyShort) -> (AST.IntegerType AST.Signless 16, True)
+    TyIntegral (id -> TyUShort) -> (AST.IntegerType AST.Signless 16, False)
+    TyIntegral (id -> TyInt) -> (AST.IntegerType AST.Signless 32, True)
+    TyIntegral (id -> TyUInt) -> (AST.IntegerType AST.Signless 32, False)
+    TyIntegral (id -> TyInt128) -> (AST.IntegerType AST.Signless 128, True)
+    TyIntegral (id -> TyUInt128) -> (AST.IntegerType AST.Signless 128, False)
+    TyIntegral (id -> TyLong) -> (AST.IntegerType AST.Signless 64, True)
+    TyIntegral (id -> TyULong) -> (AST.IntegerType AST.Signless 64, False)
+    TyIntegral (id -> TyLLong) -> (AST.IntegerType AST.Signless 64, True)
+    TyIntegral (id -> TyULLong) -> (AST.IntegerType AST.Signless 64, False)
+    TyFloating (id -> TyFloat) -> (AST.Float32Type, True)
+    TyFloating (id -> TyDouble) -> (AST.Float64Type, True)
+    TyFloating (id -> TyLDouble) -> (AST.Float64Type, True)
     TyFloating (id -> TyFloatN n _) -> unsupported ty
     TyComplex t -> type_ (DirectType (TyFloating t) quals attrs)
     TyComp ref -> unsupported ty
@@ -308,8 +314,8 @@ type_ ty@(PtrType t quals attrs) = unsupported ty --AST.MemRefType [Nothing] (ty
 type_ (ArrayType t size quals attrs) =
   let s = arraySize size
    in case type_ t of
-        AST.MemRefType sizes t Nothing Nothing -> AST.MemRefType (s:sizes) t Nothing Nothing
-        t -> AST.MemRefType [s] t Nothing Nothing
+        (AST.MemRefType sizes t Nothing Nothing, sign) -> (AST.MemRefType (s:sizes) t Nothing Nothing, sign)
+        (t, sign) -> (AST.MemRefType [s] t Nothing Nothing, sign)
 type_ (TypeDefType (TypeDefRef ident t _) quals attrs) = type_ t
 
 arraySize :: ArraySize -> Maybe Int
@@ -320,14 +326,14 @@ arraySize (ArraySize static expr) =
     Just e -> Just $ fromIntegral e
     Nothing -> error "unsupported dynamic array size"
 
-paramDecl :: ParamDecl -> (String, AST.Type)
+paramDecl :: ParamDecl -> (String, SType)
 paramDecl (ParamDecl var _) = varDecl var
 paramDecl (AbstractParamDecl var _) = varDecl var
 
-varDecl :: VarDecl -> (String, AST.Type)
+varDecl :: VarDecl -> (String, SType)
 varDecl (VarDecl name attrs ty) = (varName name, type_ ty)
 
-params :: VarDecl -> [(String, AST.Type)]
+params :: VarDecl -> [(String, SType)]
 params (VarDecl name attr ty) = f ty
   where f (FunctionType ty attrs) = ps ty
         f _ = unsupported ty
