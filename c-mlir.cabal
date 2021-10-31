@@ -28,6 +28,7 @@ library
       CMLIR
       CMLIR.Dialect.Arith
       CMLIR.Dialect.MemRef
+      CMLIR.Dialect.Std
       CMLIR.Parser
       CMLIR.Translator
   other-modules:

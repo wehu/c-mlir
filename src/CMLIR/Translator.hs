@@ -11,6 +11,7 @@ import qualified Data.ByteString.UTF8 as BU
 import qualified MLIR.AST.Dialect.Arith as Arith
 import qualified CMLIR.Dialect.Arith as Arith
 import qualified MLIR.AST.Dialect.Std as Std
+import qualified CMLIR.Dialect.Std as Std
 import qualified MLIR.Native as MLIR
 import qualified MLIR.AST.Dialect.MemRef as MemRef
 import qualified CMLIR.Dialect.MemRef as MemRef
@@ -328,6 +329,12 @@ transExpr c@(CCast t e node) = do
                     AST.Float64Type -> 64
                     AST.IntegerType _ bs -> bs
                     _ -> unsupported c
+transExpr (CCall (CVar ident _) args node) = do
+  let name = identName ident
+  id <- freshName
+  argsBs <- mapM transExpr args
+  let call = id AST.:= Std.call (getPos node) AST.Float32Type (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
+  return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (AST.Float32Type, True))
 transExpr e = unsupported e
 
 collectIndices src indices =
