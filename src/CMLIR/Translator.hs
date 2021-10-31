@@ -142,6 +142,7 @@ transBlockItem s = unsupported s
 transLocalDecl :: ObjDef -> EnvM [BindingOrName]
 transLocalDecl (ObjDef var init node) = do
   id <- freshName
+  initBs <- mapM transInit init
   let (n, t) = varDecl var
       mt = case t of
              (t@AST.MemRefType{}, _) -> t
@@ -149,7 +150,13 @@ transLocalDecl (ObjDef var init node) = do
       alloc = MemRef.alloca (getPos node) mt [] []
       b = Left $ id AST.:= alloc
   addVar n (id, t, True)
-  return [b]
+  return $ fromMaybe [] initBs ++ [b]
+
+transInit :: CInitializer NodeInfo -> EnvM [BindingOrName]
+transInit (CInitExpr e node) = do
+  bs <- transExpr e
+  return $ bs ^._1
+transInit init = unsupported init
 
 lastId :: [BindingOrName] -> BU.ByteString
 lastId [] = error "no intruction"
@@ -318,7 +325,7 @@ transExpr c@(CCast t e node) = do
         floatTy bits = case bits of
                          16 -> AST.Float16Type
                          32 -> AST.Float32Type
-                         64 -> AST.Float64Type 
+                         64 -> AST.Float64Type
                          _ -> unsupported c
         isInt ty = case ty of
                      AST.IntegerType _ _ -> True
@@ -329,12 +336,12 @@ transExpr c@(CCast t e node) = do
                     AST.Float64Type -> 64
                     AST.IntegerType _ bs -> bs
                     _ -> unsupported c
-transExpr (CCall (CVar ident _) args node) = do
-  let name = identName ident
-  id <- freshName
-  argsBs <- mapM transExpr args
-  let call = id AST.:= Std.call (getPos node) AST.Float32Type (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
-  return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (AST.Float32Type, True))
+-- transExpr (CCall (CVar ident _) args node) = do
+--   let name = identName ident
+--   id <- freshName
+--   argsBs <- mapM transExpr args
+--   let call = id AST.:= Std.call (getPos node) AST.Float32Type (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
+--   return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (AST.Float32Type, True))
 transExpr e = unsupported e
 
 collectIndices src indices =
