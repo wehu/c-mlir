@@ -203,8 +203,6 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
     addVar name (BU.fromString name, (AST.IndexType, True), True)
     transBlock [(BU.fromString name, AST.IndexType)] body
       (Just $ AST.Do $ Affine.yield (getPos node) [] [])
-  --(lbBs, _) <- transExpr lb
-  --(ubBs, _) <- transExpr ub
   let for = AST.Do $ Affine.for
                   (getPos node)
                   (fromIntegral $ fromJust $ intValue lb)
