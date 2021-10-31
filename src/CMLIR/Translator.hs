@@ -218,8 +218,8 @@ const0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
 transExpr :: CExpression NodeInfo -> EnvM ([BindingOrName], SType)
 transExpr (CConst c) = transConst c
 transExpr (CVar ident node) = do
-  (id, (ty, sign), isLocal) <- lookupVar (identName ident)
-  if isLocal then do
+  (id, (ty, sign), isMemRef) <- lookupVar (identName ident)
+  if isMemRef then do
     id0 <- freshName
     let c = const0 (getPos node)
         op0 = id0 AST.:= c
@@ -233,7 +233,7 @@ transExpr (CAssign op lhs rhs node) = do
   let name = case src of
                CVar ident _ -> identName ident
                _ -> unsupported src
-  (id, ty, isLocal) <- lookupVar name
+  (id, ty, isMemRef) <- lookupVar name
   (rhsBs, rhsTy) <- transExpr (case op of
                       CAssignOp -> rhs
                       CMulAssOp -> CBinary CAddOp lhs rhs node
@@ -315,7 +315,7 @@ transExpr (CIndex e index node) = do
   let name = case src of
                CVar ident _ -> identName ident
                _ -> unsupported src
-  (srcId, (srcTy, sign), isLocal) <- lookupVar name
+  (srcId, (srcTy, sign), isMemRef) <- lookupVar name
   indexBs <- mapM transExpr indices
   let indexIds = map lastId (indexBs ^.. traverse . _1)
   toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
