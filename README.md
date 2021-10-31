@@ -10,7 +10,7 @@ Install stack
 curl https://get-ghcup.haskell.org -sSf | sh
 ```
 
-Install [mlir-hs](https://github.com/google/mlir-hs)
+Install [mlir-hs](https://github.com/wehu/mlir-hs)
 
 ```shell
 git clone https://github.com/wehu/mlir-hs
