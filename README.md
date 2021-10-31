@@ -13,7 +13,7 @@ curl https://get-ghcup.haskell.org -sSf | sh
 Install [mlir-hs](https://github.com/google/mlir-hs)
 
 ```shell
-git clone https://github.com/google/mlir-hs
+git clone https://github.com/wehu/mlir-hs
 cd mlir-hs
 
 # link your llvm-project in mlir-hs directory

@@ -14,5 +14,5 @@ call loc ty callee args = Operation
   , opOperands = args
   , opRegions = []
   , opSuccessors = []
-  , opAttributes = namedAttribute "callee" (StringAttr callee)
+  , opAttributes = namedAttribute "callee" (FlatSymbolRefAttr callee)
   }

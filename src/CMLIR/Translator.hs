@@ -102,6 +102,7 @@ translateToMLIR tu =
                    let res = runTrav initEnv $ do
                               modifyUserState (\s -> s{funDefs=[]})
                               withExtDeclHandler (analyseAST tu) handleFDef
+                              getUserState  >>= mapM_ registerFunction . funDefs
                               fs <- getUserState >>= mapM transFunction . funDefs
                               id <- freshName
                               return $ AST.ModuleOp $ AST.Block id [] fs
@@ -112,6 +113,11 @@ translateToMLIR tu =
      check <- MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
      BU.toString <$> MLIR.showOperation {-WithLocation-} nativeOp)
+
+registerFunction :: FunDef -> EnvM ()
+registerFunction f@(FunDef var stmt node) = do
+  let (name, (ty, sign)) = varDecl var
+  addVar name (BU.fromString name, (ty, sign), True)
 
 transFunction :: FunDef -> EnvM AST.Binding
 transFunction f@(FunDef var stmt node) = underScope $ do
@@ -342,12 +348,16 @@ transExpr c@(CCast t e node) = do
                     AST.Float64Type -> 64
                     AST.IntegerType _ bs -> bs
                     _ -> unsupported c
--- transExpr (CCall (CVar ident _) args node) = do
---   let name = identName ident
---   id <- freshName
---   argsBs <- mapM transExpr args
---   let call = id AST.:= Std.call (getPos node) AST.Float32Type (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
---   return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (AST.Float32Type, True))
+transExpr (CCall (CVar ident _) args node) = do
+  let name = identName ident
+  (_, (ty, sign), _) <- lookupVar name
+  let resTy = case ty of
+                AST.FunctionType _ [resTy] -> resTy
+                _ -> error "expected a function type"
+  id <- freshName
+  argsBs <- mapM transExpr args
+  let call = id AST.:= Std.call (getPos node) resTy (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
+  return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (resTy, sign))
 transExpr e = unsupported e
 
 collectIndices src indices =
@@ -425,7 +435,7 @@ type_ :: Type -> SType
 type_ (FunctionType ty attrs) = f ty
   where f (FunType resType argTypes _) =
             (AST.FunctionType (map (\t -> paramDecl t ^. _2 . _1) argTypes)
-                              (map (\t -> type_ t ^._1) [resType]), False)
+                              (map (\t -> type_ t ^._1) [resType]), type_ resType ^. _2)
         f (FunTypeIncomplete ty) = type_ ty
 type_ ty@(DirectType name quals attrs) =
   case name of
