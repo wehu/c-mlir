@@ -198,7 +198,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                                 Nothing)] _))
                 (Just (CBinary CLeOp (CVar ident1 _) ub@(CConst _) _))
                 (Just (CAssign CAddAssOp (CVar ident2 _) step@(CConst _) _))
-                body@(CCompound _ (intr:_) _) node)
+                body@(CCompound _ (_:_) _) node)
   | ident0 == ident1 && ident1 == ident2 = do
   let name = identName ident0
   b <- underScope $ do
