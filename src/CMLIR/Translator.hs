@@ -142,6 +142,8 @@ transBlockItem s = unsupported s
 transLocalDecl :: ObjDef -> EnvM [BindingOrName]
 transLocalDecl (ObjDef var init node) = do
   id <- freshName
+  id0 <- freshName
+  id1 <- freshName
   initBs <- mapM transInit init
   let (n, t) = varDecl var
       mt = case t of
@@ -149,8 +151,12 @@ transLocalDecl (ObjDef var init node) = do
              (t, _) -> AST.MemRefType [Just 1] t Nothing Nothing
       alloc = MemRef.alloca (getPos node) mt [] []
       b = Left $ id AST.:= alloc
+      st = if isn't _Nothing initBs then
+             [Left $ id0 AST.:= const0 (getPos node)
+             ,Left $ id1 AST.:= MemRef.Store (lastId $ fromJust initBs) id [id0]]
+           else []
   addVar n (id, t, True)
-  return $ fromMaybe [] initBs ++ [b]
+  return $ fromMaybe [] initBs ++ [b] ++ st
 
 transInit :: CInitializer NodeInfo -> EnvM [BindingOrName]
 transInit (CInitExpr e node) = do
