@@ -349,7 +349,7 @@ transExpr (CAssign op lhs rhs node) = do
   (id, ty, isMemRef) <- lookupVar name
   (rhsBs, rhsTy) <- transExpr (case op of
                       CAssignOp -> rhs
-                      CMulAssOp -> CBinary CAddOp lhs rhs node
+                      CMulAssOp -> CBinary CMulOp lhs rhs node
                       CDivAssOp -> CBinary CDivOp lhs rhs node
                       CRmdAssOp -> CBinary CRmdOp lhs rhs node
                       CAddAssOp -> CBinary CAddOp lhs rhs node

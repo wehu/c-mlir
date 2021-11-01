@@ -409,6 +409,69 @@ module  {
   }
 }
       |]
+
+    it "can translate assign operations" $ do
+      [r|
+void foo() {
+  int i;
+  i += 1;
+  i -= 1;
+  i *= 1;
+  i /= 1;
+  i %= 1;
+  i &= 1;
+  i |= 1;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xi32>
+    %c0 = arith.constant 0 : index
+    %1 = memref.load %0[%c0] : memref<1xi32>
+    %c1_i32 = arith.constant 1 : i32
+    %2 = arith.addi %1, %c1_i32 : i32
+    %c0_0 = arith.constant 0 : index
+    memref.store %2, %0[%c0_0] : memref<1xi32>
+    %c0_1 = arith.constant 0 : index
+    %3 = memref.load %0[%c0_1] : memref<1xi32>
+    %c1_i32_2 = arith.constant 1 : i32
+    %4 = arith.subi %3, %c1_i32_2 : i32
+    %c0_3 = arith.constant 0 : index
+    memref.store %4, %0[%c0_3] : memref<1xi32>
+    %c0_4 = arith.constant 0 : index
+    %5 = memref.load %0[%c0_4] : memref<1xi32>
+    %c1_i32_5 = arith.constant 1 : i32
+    %6 = arith.muli %5, %c1_i32_5 : i32
+    %c0_6 = arith.constant 0 : index
+    memref.store %6, %0[%c0_6] : memref<1xi32>
+    %c0_7 = arith.constant 0 : index
+    %7 = memref.load %0[%c0_7] : memref<1xi32>
+    %c1_i32_8 = arith.constant 1 : i32
+    %8 = arith.divsi %7, %c1_i32_8 : i32
+    %c0_9 = arith.constant 0 : index
+    memref.store %8, %0[%c0_9] : memref<1xi32>
+    %c0_10 = arith.constant 0 : index
+    %9 = memref.load %0[%c0_10] : memref<1xi32>
+    %c1_i32_11 = arith.constant 1 : i32
+    %10 = arith.remsi %9, %c1_i32_11 : i32
+    %c0_12 = arith.constant 0 : index
+    memref.store %10, %0[%c0_12] : memref<1xi32>
+    %c0_13 = arith.constant 0 : index
+    %11 = memref.load %0[%c0_13] : memref<1xi32>
+    %c1_i32_14 = arith.constant 1 : i32
+    %12 = arith.andi %11, %c1_i32_14 : i32
+    %c0_15 = arith.constant 0 : index
+    memref.store %12, %0[%c0_15] : memref<1xi32>
+    %c0_16 = arith.constant 0 : index
+    %13 = memref.load %0[%c0_16] : memref<1xi32>
+    %c1_i32_17 = arith.constant 1 : i32
+    %14 = arith.ori %13, %c1_i32_17 : i32
+    %c0_18 = arith.constant 0 : index
+    memref.store %14, %0[%c0_18] : memref<1xi32>
+    return
+  }
+}
+      |]
     
     it "can translate function arguments" $ do
       [r|
