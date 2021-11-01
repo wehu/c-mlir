@@ -512,8 +512,13 @@ transInt (CInteger i _ flag) loc = do
            | testFlag FlagLongLong flag = 64
            | testFlag FlagImag flag = 32
            | otherwise = 32
+      sign | testFlag FlagUnsigned flag = False
+           | testFlag FlagLong flag = True
+           | testFlag FlagLongLong flag = True
+           | testFlag FlagImag flag = False
+           | otherwise = True
       ty = AST.IntegerType AST.Signless bits
-  return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral i))], (ty, True))
+  return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral i))], (ty, sign))
 
 -- | Translate a char literal
 transChar :: CChar -> AST.Location -> EnvM ([BindingOrName], SType)
