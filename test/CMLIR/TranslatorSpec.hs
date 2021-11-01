@@ -370,6 +370,45 @@ module  {
   }
 }
       |]
+
+    it "can translate logic operations" $ do
+      [r|
+void foo() {
+  unsigned int v0,v1;
+  v0 == v1 && v0 == v1;
+  v0 == v1 || v0 == v1;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xi32>
+    %1 = memref.alloca() : memref<1xi32>
+    %c0 = arith.constant 0 : index
+    %2 = memref.load %0[%c0] : memref<1xi32>
+    %c0_0 = arith.constant 0 : index
+    %3 = memref.load %1[%c0_0] : memref<1xi32>
+    %4 = arith.cmpi eq, %2, %3 : i32
+    %c0_1 = arith.constant 0 : index
+    %5 = memref.load %0[%c0_1] : memref<1xi32>
+    %c0_2 = arith.constant 0 : index
+    %6 = memref.load %1[%c0_2] : memref<1xi32>
+    %7 = arith.cmpi eq, %5, %6 : i32
+    %8 = arith.andi %4, %7 : i1
+    %c0_3 = arith.constant 0 : index
+    %9 = memref.load %0[%c0_3] : memref<1xi32>
+    %c0_4 = arith.constant 0 : index
+    %10 = memref.load %1[%c0_4] : memref<1xi32>
+    %11 = arith.cmpi eq, %9, %10 : i32
+    %c0_5 = arith.constant 0 : index
+    %12 = memref.load %0[%c0_5] : memref<1xi32>
+    %c0_6 = arith.constant 0 : index
+    %13 = memref.load %1[%c0_6] : memref<1xi32>
+    %14 = arith.cmpi eq, %12, %13 : i32
+    %15 = arith.ori %11, %14 : i1
+    return
+  }
+}
+      |]
     
     it "can translate function arguments" $ do
       [r|

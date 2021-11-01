@@ -390,6 +390,14 @@ transExpr (CBinary bop lhs rhs node) = do
               AST.IntegerType _ _ -> False
               AST.IndexType -> False
               _ -> True
+      boolTy = AST.IntegerType AST.Signless 1
+      resTy | bop == CEqOp ||
+              bop == CNeqOp ||
+              bop == CLeOp ||
+              bop == CGrOp ||
+              bop == CLeqOp ||
+              bop == CGeqOp = boolTy
+            | otherwise = lhsTy    
       op = id AST.:= (case bop of
                         CAddOp -> if isF then Arith.AddF else Arith.AddI
                         CSubOp -> if isF then Arith.SubF else Arith.SubI
@@ -409,8 +417,8 @@ transExpr (CBinary bop lhs rhs node) = do
                         CGrOp -> if isF then Arith.cmpf 2 else (if lhsSign then Arith.cmpi 4 else Arith.cmpi 8)
                         CLeqOp -> if isF then Arith.cmpf 5 else (if lhsSign then Arith.cmpi 3 else Arith.cmpi 7)
                         CGeqOp -> if isF then Arith.cmpf 3 else (if lhsSign then Arith.cmpi 5 else Arith.cmpi 9)
-                        ) loc lhsTy lhsId rhsId
-  return (lhsBs ++ rhsBs ++ [Left op], (lhsTy, lhsSign))
+                        ) loc resTy lhsId rhsId
+  return (lhsBs ++ rhsBs ++ [Left op], (resTy, lhsSign))
 transExpr (CComma es _) = do
   bs <- mapM transExpr es
   let ty = last bs ^._2
