@@ -46,6 +46,7 @@ type SType = (AST.Type, Bool)
 data Env = Env {decls :: [Decl],
                 objDefs :: [ObjDef],
                 funDefs :: [FunDef],
+                funsWithBody :: M.Map String Bool,
                 enumerators :: [Enumerator],
                 typeDefs :: [TypeDef],
                 labels :: M.Map String BU.ByteString,
@@ -59,6 +60,7 @@ type BindingOrName = Either AST.Binding BU.ByteString
 initEnv = Env{decls = [],
               objDefs = [],
               funDefs = [],
+              funsWithBody = M.empty,
               enumerators = [],
               typeDefs = [],
               labels = M.empty,
@@ -139,13 +141,15 @@ translateToMLIR tu =
      MLIR.registerAllDialects ctx
      nativeOp <- fromAST ctx (mempty, mempty) $ do
                    let res = runTrav initEnv $ do
-                              modifyUserState (\s -> s{funDefs=[]})
+                              modifyUserState (\s -> s{vars=M.empty, decls=[]})
+                              withExtDeclHandler (analyseAST tu) handleGDecl
+                              getUserState  >>= mapM_ registerFunction . decls
+                              modifyUserState (\s -> s{funDefs=[], funsWithBody=M.empty})
                               withExtDeclHandler (analyseAST tu) handleFDef
-                              getUserState  >>= mapM_ registerFunction . funDefs
+                              fs <- getUserState >>= mapM transFunction . funDefs
                               modifyUserState (\s -> s{decls=[]})
                               withExtDeclHandler (analyseAST tu) handleGDecl
                               ds <- getUserState >>= mapM transGDecl . decls
-                              fs <- getUserState >>= mapM transFunction . funDefs
                               id <- freshName
                               return $ AST.ModuleOp $ AST.Block id [] (join ds ++ fs)
                    case res of
@@ -160,7 +164,7 @@ translateToMLIR tu =
 transGDecl :: Decl -> EnvM [AST.Binding]
 transGDecl decl@(Decl var node) = do
    let (name, (ty, sign)) = varDecl var
-   funcs <- vars <$> getUserState
+   funcs <- funsWithBody <$> getUserState
    let found = M.lookup name funcs
    if isn't _Nothing found then return []
    else 
@@ -171,20 +175,22 @@ transGDecl decl@(Decl var node) = do
        _ -> unsupported decl
 
 -- | Register all function types into env
-registerFunction :: FunDef -> EnvM ()
-registerFunction f@(FunDef var stmt node) = do
+registerFunction :: Decl -> EnvM ()
+registerFunction f@(Decl var node) = do
   let (name, (ty, sign)) = varDecl var
   addVar name (BU.fromString name, (ty, sign), True)
 
 -- | Translate a function to mlir AST
 transFunction :: FunDef -> EnvM AST.Binding
-transFunction f@(FunDef var stmt node) = underScope $ do
+transFunction f@(FunDef var stmt node) = do
   let (name, (ty, sign)) = varDecl var
       args = over (traverse . _1) BU.fromString $
                over (traverse . _2) fst $ params var
-  mapM_ (uncurry addVar) [(a ^._1, (BU.fromString $ a ^._1, a^._2, False)) | a <- params var]
-  b <- transBlock args [] stmt []
-  return $ AST.Do $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
+  modifyUserState (\s -> s{funsWithBody=M.insert name True (funsWithBody s)})
+  underScope $ do
+    mapM_ (uncurry addVar) [(a ^._1, (BU.fromString $ a ^._1, a^._2, False)) | a <- params var]
+    b <- transBlock args [] stmt []
+    return $ AST.Do $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
 
 -- | Translate a function block
 transBlock :: [(AST.Name, AST.Type)] -> [AST.Binding] -> CStatement NodeInfo -> [AST.Binding] -> EnvM AST.Block
