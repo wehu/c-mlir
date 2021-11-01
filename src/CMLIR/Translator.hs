@@ -141,15 +141,19 @@ translateToMLIR tu =
      MLIR.registerAllDialects ctx
      nativeOp <- fromAST ctx (mempty, mempty) $ do
                    let res = runTrav initEnv $ do
+                              -- first add all global function declarations
                               modifyUserState (\s -> s{vars=M.empty, decls=[]})
                               withExtDeclHandler (analyseAST tu) handleGDecl
                               getUserState  >>= mapM_ registerFunction . decls
+                              -- translate all functions with definition body
                               modifyUserState (\s -> s{funDefs=[], funsWithBody=M.empty})
                               withExtDeclHandler (analyseAST tu) handleFDef
                               fs <- getUserState >>= mapM transFunction . funDefs
+                              -- add declarations for all functions without body
                               modifyUserState (\s -> s{decls=[]})
                               withExtDeclHandler (analyseAST tu) handleGDecl
                               ds <- getUserState >>= mapM transGDecl . decls
+                              -- generate a module
                               id <- freshName
                               return $ AST.ModuleOp $ AST.Block id [] (join ds ++ fs)
                    case res of
