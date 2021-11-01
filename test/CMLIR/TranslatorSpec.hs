@@ -594,3 +594,125 @@ module  {
   }
 }
       |]
+
+    it "can translate cast to integer" $ do
+      [r|
+void foo() {
+  char v0;
+  short v1;
+  int v2;
+  long v3;
+  float v4;
+  double v5;
+  (char)v0;
+  (char)v1;
+  (char)v2;
+  (char)v3;
+  (char)v4;
+  (char)v5;
+  (short)v0;
+  (short)v1;
+  (short)v2;
+  (short)v3;
+  (short)v4;
+  (short)v5;
+  (int)v0;
+  (int)v1;
+  (int)v2;
+  (int)v3;
+  (int)v4;
+  (int)v5;
+  (long)v0;
+  (long)v1;
+  (long)v2;
+  (long)v3;
+  (long)v4;
+  (long)v5;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xi8>
+    %1 = memref.alloca() : memref<1xi16>
+    %2 = memref.alloca() : memref<1xi32>
+    %3 = memref.alloca() : memref<1xi64>
+    %4 = memref.alloca() : memref<1xf32>
+    %5 = memref.alloca() : memref<1xf64>
+    %c0 = arith.constant 0 : index
+    %6 = memref.load %0[%c0] : memref<1xi8>
+    %c0_0 = arith.constant 0 : index
+    %7 = memref.load %1[%c0_0] : memref<1xi16>
+    %8 = arith.trunci %7 : i16 to i8
+    %c0_1 = arith.constant 0 : index
+    %9 = memref.load %2[%c0_1] : memref<1xi32>
+    %10 = arith.trunci %9 : i32 to i8
+    %c0_2 = arith.constant 0 : index
+    %11 = memref.load %3[%c0_2] : memref<1xi64>
+    %12 = arith.trunci %11 : i64 to i8
+    %c0_3 = arith.constant 0 : index
+    %13 = memref.load %4[%c0_3] : memref<1xf32>
+    %14 = arith.fptosi %13 : f32 to i32
+    %15 = arith.trunci %14 : i32 to i8
+    %c0_4 = arith.constant 0 : index
+    %16 = memref.load %5[%c0_4] : memref<1xf64>
+    %17 = arith.fptosi %16 : f64 to i64
+    %18 = arith.trunci %17 : i64 to i8
+    %c0_5 = arith.constant 0 : index
+    %19 = memref.load %0[%c0_5] : memref<1xi8>
+    %20 = arith.extsi %19 : i8 to i16
+    %c0_6 = arith.constant 0 : index
+    %21 = memref.load %1[%c0_6] : memref<1xi16>
+    %c0_7 = arith.constant 0 : index
+    %22 = memref.load %2[%c0_7] : memref<1xi32>
+    %23 = arith.trunci %22 : i32 to i16
+    %c0_8 = arith.constant 0 : index
+    %24 = memref.load %3[%c0_8] : memref<1xi64>
+    %25 = arith.trunci %24 : i64 to i16
+    %c0_9 = arith.constant 0 : index
+    %26 = memref.load %4[%c0_9] : memref<1xf32>
+    %27 = arith.fptosi %26 : f32 to i32
+    %28 = arith.trunci %27 : i32 to i16
+    %c0_10 = arith.constant 0 : index
+    %29 = memref.load %5[%c0_10] : memref<1xf64>
+    %30 = arith.fptosi %29 : f64 to i64
+    %31 = arith.trunci %30 : i64 to i16
+    %c0_11 = arith.constant 0 : index
+    %32 = memref.load %0[%c0_11] : memref<1xi8>
+    %33 = arith.extsi %32 : i8 to i32
+    %c0_12 = arith.constant 0 : index
+    %34 = memref.load %1[%c0_12] : memref<1xi16>
+    %35 = arith.extsi %34 : i16 to i32
+    %c0_13 = arith.constant 0 : index
+    %36 = memref.load %2[%c0_13] : memref<1xi32>
+    %c0_14 = arith.constant 0 : index
+    %37 = memref.load %3[%c0_14] : memref<1xi64>
+    %38 = arith.trunci %37 : i64 to i32
+    %c0_15 = arith.constant 0 : index
+    %39 = memref.load %4[%c0_15] : memref<1xf32>
+    %40 = arith.fptosi %39 : f32 to i32
+    %c0_16 = arith.constant 0 : index
+    %41 = memref.load %5[%c0_16] : memref<1xf64>
+    %42 = arith.fptosi %41 : f64 to i64
+    %43 = arith.trunci %42 : i64 to i32
+    %c0_17 = arith.constant 0 : index
+    %44 = memref.load %0[%c0_17] : memref<1xi8>
+    %45 = arith.extsi %44 : i8 to i64
+    %c0_18 = arith.constant 0 : index
+    %46 = memref.load %1[%c0_18] : memref<1xi16>
+    %47 = arith.extsi %46 : i16 to i64
+    %c0_19 = arith.constant 0 : index
+    %48 = memref.load %2[%c0_19] : memref<1xi32>
+    %49 = arith.extsi %48 : i32 to i64
+    %c0_20 = arith.constant 0 : index
+    %50 = memref.load %3[%c0_20] : memref<1xi64>
+    %c0_21 = arith.constant 0 : index
+    %51 = memref.load %4[%c0_21] : memref<1xf32>
+    %52 = arith.fptosi %51 : f32 to i32
+    %53 = arith.extsi %52 : i32 to i64
+    %c0_22 = arith.constant 0 : index
+    %54 = memref.load %5[%c0_22] : memref<1xf64>
+    %55 = arith.fptosi %54 : f64 to i64
+    return
+  }
+}
+      |]
