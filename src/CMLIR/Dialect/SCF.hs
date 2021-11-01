@@ -15,8 +15,8 @@ for loc types lb ub step args region = Operation
   , opAttributes = NoAttrs
   }
 
-if_ :: Location -> [Type] -> Name -> Region -> Region -> Operation
-if_ loc types cond t f = Operation
+ifelse :: Location -> [Type] -> Name -> Region -> Region -> Operation
+ifelse loc types cond t f = Operation
   { opName = "scf.if"
   , opLocation = loc
   , opResultTypes = Explicit types

@@ -241,7 +241,13 @@ transStmt (CIf cond t (Just f) node) = do
   (condBs, _) <- transExpr cond
   tb <- underScope $ transBlock [] t (Just $ AST.Do $ SCF.yield loc [] [])
   fb <- underScope $ transBlock [] f (Just $ AST.Do $ SCF.yield loc [] [])
-  let if_ = AST.Do $ SCF.if_ loc [] (lastId condBs) (AST.Region [tb]) (AST.Region [fb])
+  let if_ = AST.Do $ SCF.ifelse loc [] (lastId condBs) (AST.Region [tb]) (AST.Region [fb])
+  return $ condBs ++ [Left if_]
+transStmt (CIf cond t Nothing node) = do
+  let loc = getPos node
+  (condBs, _) <- transExpr cond
+  tb <- underScope $ transBlock [] t (Just $ AST.Do $ SCF.yield loc [] [])
+  let if_ = AST.Do $ SCF.ifelse loc [] (lastId condBs) (AST.Region [tb]) (AST.Region [])
   return $ condBs ++ [Left if_]
 transStmt e = unsupported e
 
