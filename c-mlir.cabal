@@ -73,19 +73,24 @@ test-suite c-mlir-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      CMLIR.TranslatorSpec
       Paths_c_mlir
   hs-source-dirs:
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      array
+      QuickCheck
+    , array
     , base >=4.7 && <5
+    , bytestring
     , c-mlir
     , containers
+    , hspec
     , language-c
     , lens
     , mlir-hs
     , mtl
     , optparse-applicative
+    , raw-strings-qq
     , utf8-string
   default-language: Haskell2010

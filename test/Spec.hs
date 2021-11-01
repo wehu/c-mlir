@@ -1,2 +1,5 @@
+import Test.Hspec
+import CMLIR.TranslatorSpec
+
 main :: IO ()
-main = putStrLn "Test suite not yet implemented"
+main = hspec spec

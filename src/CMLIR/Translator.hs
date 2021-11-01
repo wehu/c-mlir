@@ -171,7 +171,7 @@ transGDecl decl@(Decl var node) = do
    funcs <- funsWithBody <$> getUserState
    let found = M.lookup name funcs
    if isn't _Nothing found then return []
-   else 
+   else
      case ty of
        AST.FunctionType argType resultTypes -> do
          let f = AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region []
@@ -198,12 +198,18 @@ transFunction f@(FunDef var stmt node) = do
 
 -- | Translate a function block
 transBlock :: [(AST.Name, AST.Type)] -> [AST.Binding] -> CStatement NodeInfo -> [AST.Binding] -> EnvM AST.Block
-transBlock args pre (CCompound labels items _) post = do
+transBlock args pre (CCompound labels items node) post = do
   id <- freshName
   -- let lnames = map identName labels
   ops <- join <$> mapM transBlockItem items
   -- forM_ lnames (`addLabel` id)
-  return $ AST.Block id args (pre ++ ops ^..traverse._Left ++ post)
+  let defaultReturnOp = [AST.Do $ Std.Return (getPos node) []]
+      lastOp =
+       if null ops then defaultReturnOp
+       else case last ops of
+           Left (AST.Do (Std.Return _ _)) -> []
+           _ -> defaultReturnOp
+  return $ AST.Block id args (pre ++ ops ^..traverse._Left ++ (if null post then lastOp else post))
 transBlock args _ s _ = unsupported (posOf s) s
 
 -- | Translate a statement in block
@@ -566,7 +572,7 @@ type_ :: Position -> Type -> SType
 type_ pos (FunctionType ty attrs) = f ty
   where f (FunType resType argTypes _) =
             (AST.FunctionType (map (\t -> paramDecl pos t ^. _2 . _1) argTypes)
-                              (map (\t -> type_ pos t ^._1) [resType]), type_ pos resType ^. _2)
+                              ([t | t <- map (\t -> type_ pos t ^._1) [resType], t /= AST.NoneType]), type_ pos resType ^. _2)
         f (FunTypeIncomplete ty) = type_ pos ty
 type_ pos ty@(DirectType name quals attrs) =
   case name of

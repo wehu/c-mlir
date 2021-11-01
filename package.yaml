@@ -54,3 +54,7 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - c-mlir
+    - hspec
+    - raw-strings-qq
+    - bytestring
+    - QuickCheck

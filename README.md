@@ -2,6 +2,15 @@
 
 Translator from c to MLIR
 
+Only a small subset of c is supported based on the current semantics of MLIR dialects.
+
+* Scalar builtin types -> MLIR types
+* Static sizes of array and operation -> MemRef dialect
+* Arithmetic operations -> Arith dialect
+* A limited version of flow control(for/if) -> Affine/SCF dialect
+
+for `for`, if possiable, try to lower to affine for, or lower to scf for
+
 ## Install
 
 Install stack
@@ -25,3 +34,9 @@ make -j4 install
 ```
 
 Add local mlir-hs package to stack.yaml as external package
+
+Run tests
+
+```shell
+stack test
+```
