@@ -265,7 +265,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                                 Nothing)] _))
                 (Just (CBinary CLeOp (CVar ident1 _) ub@(CConst _) _))
                 (Just (CAssign CAddAssOp (CVar ident2 _) step@(CConst _) _))
-                body@(CCompound _ (_:_) _) node)
+                body node)
   | ident0 == ident1 && ident1 == ident2 = do
   let name = identName ident0
       loc = getPos node
@@ -291,7 +291,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                                 Nothing)] _))
                 (Just (CBinary CLeOp (CVar ident1 _) ub _))
                 (Just (CAssign CAddAssOp (CVar ident2 _) step _))
-                body@(CCompound _ (_:_) _) node)
+                body node)
   | ident0 == ident1 && ident1 == ident2 = do
   let name = identName ident0
       loc = getPos node

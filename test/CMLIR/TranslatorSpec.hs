@@ -421,3 +421,99 @@ module  {
 }
       |]
 
+    it "can translate for loop to affine for" $ do
+      [r|
+void foo() {
+  for (int i=0; i < 10; i += 2) {
+  }
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    affine.for %arg0 = 0 to 10 step 2 {
+      %0 = arith.index_cast %arg0 : index to i32
+    }
+    return
+  }
+}
+      |]
+
+    it "can translate for loop to scf for" $ do
+      [r|
+void foo() {
+  int j = 0;
+  for (int i=j; i < 10; i += 2) {
+  }
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %c0_i32 = arith.constant 0 : i32
+    %0 = memref.alloca() : memref<1xi32>
+    %c0 = arith.constant 0 : index
+    memref.store %c0_i32, %0[%c0] : memref<1xi32>
+    %c0_0 = arith.constant 0 : index
+    %1 = memref.load %0[%c0_0] : memref<1xi32>
+    %c10_i32 = arith.constant 10 : i32
+    %c2_i32 = arith.constant 2 : i32
+    %2 = arith.index_cast %1 : i32 to index
+    %3 = arith.index_cast %c10_i32 : i32 to index
+    %4 = arith.index_cast %c2_i32 : i32 to index
+    scf.for %arg0 = %2 to %3 step %4 {
+      %5 = arith.index_cast %arg0 : index to i32
+    }
+    return
+  }
+}
+      |]
+
+    it "can translate ifelse to scf if" $ do
+      [r|
+void foo() {
+  int i,j;
+  if (i > j) {
+  } else {
+  }
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xi32>
+    %1 = memref.alloca() : memref<1xi32>
+    %c0 = arith.constant 0 : index
+    %2 = memref.load %0[%c0] : memref<1xi32>
+    %c0_0 = arith.constant 0 : index
+    %3 = memref.load %1[%c0_0] : memref<1xi32>
+    %4 = arith.cmpi sgt, %2, %3 : i32
+    scf.if %4 {
+    } else {
+    }
+    return
+  }
+}
+      |]
+
+    it "can translate if to scf if" $ do
+      [r|
+void foo() {
+  int i,j;
+  if (i > j) {
+  }
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xi32>
+    %1 = memref.alloca() : memref<1xi32>
+    %c0 = arith.constant 0 : index
+    %2 = memref.load %0[%c0] : memref<1xi32>
+    %c0_0 = arith.constant 0 : index
+    %3 = memref.load %1[%c0_0] : memref<1xi32>
+    %4 = arith.cmpi sgt, %2, %3 : i32
+    scf.if %4 {
+    }
+    return
+  }
+}
+      |]
+
