@@ -716,3 +716,69 @@ module  {
   }
 }
       |]
+
+    it "can translate cast to float" $ do
+      [r|
+void foo() {
+  char v0;
+  short v1;
+  int v2;
+  long v3;
+  float v4;
+  double v5;
+  (float)v1;
+  (float)v2;
+  (float)v3;
+  (float)v4;
+  (float)v5;
+  (double)v1;
+  (double)v2;
+  (double)v3;
+  (double)v4;
+  (double)v5;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xi8>
+    %1 = memref.alloca() : memref<1xi16>
+    %2 = memref.alloca() : memref<1xi32>
+    %3 = memref.alloca() : memref<1xi64>
+    %4 = memref.alloca() : memref<1xf32>
+    %5 = memref.alloca() : memref<1xf64>
+    %c0 = arith.constant 0 : index
+    %6 = memref.load %1[%c0] : memref<1xi16>
+    %7 = arith.sitofp %6 : i16 to f16
+    %8 = arith.extf %7 : f16 to f32
+    %c0_0 = arith.constant 0 : index
+    %9 = memref.load %2[%c0_0] : memref<1xi32>
+    %10 = arith.sitofp %9 : i32 to f32
+    %c0_1 = arith.constant 0 : index
+    %11 = memref.load %3[%c0_1] : memref<1xi64>
+    %12 = arith.sitofp %11 : i64 to f64
+    %13 = arith.truncf %12 : f64 to f32
+    %c0_2 = arith.constant 0 : index
+    %14 = memref.load %4[%c0_2] : memref<1xf32>
+    %c0_3 = arith.constant 0 : index
+    %15 = memref.load %5[%c0_3] : memref<1xf64>
+    %16 = arith.truncf %15 : f64 to f32
+    %c0_4 = arith.constant 0 : index
+    %17 = memref.load %1[%c0_4] : memref<1xi16>
+    %18 = arith.sitofp %17 : i16 to f16
+    %19 = arith.extf %18 : f16 to f64
+    %c0_5 = arith.constant 0 : index
+    %20 = memref.load %2[%c0_5] : memref<1xi32>
+    %21 = arith.sitofp %20 : i32 to f32
+    %22 = arith.extf %21 : f32 to f64
+    %c0_6 = arith.constant 0 : index
+    %23 = memref.load %3[%c0_6] : memref<1xi64>
+    %24 = arith.sitofp %23 : i64 to f64
+    %c0_7 = arith.constant 0 : index
+    %25 = memref.load %4[%c0_7] : memref<1xf32>
+    %26 = arith.extf %25 : f32 to f64
+    %c0_8 = arith.constant 0 : index
+    %27 = memref.load %5[%c0_8] : memref<1xf64>
+    return
+  }
+}
+      |]
