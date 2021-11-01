@@ -532,8 +532,12 @@ transChar c loc = error "unsupported chars"
 transFloat :: CFloat -> AST.Location -> EnvM ([BindingOrName], SType)
 transFloat (CFloat str) loc = do
   id <- freshName
-  let ty = AST.Float32Type
-  return ([Left $ id AST.:= Arith.Constant loc ty (AST.FloatAttr ty $ read str)], (ty, True))
+  let lastC = last str
+      ty = case lastC of
+            c | c == 'l' || c == 'L' -> AST.Float64Type
+            _ -> AST.Float32Type
+      str' = if lastC == 'l' || lastC == 'L' || lastC == 'f' || lastC == 'F' then init str else str
+  return ([Left $ id AST.:= Arith.Constant loc ty (AST.FloatAttr ty $ read str')], (ty, True))
 
 -- | Translate a string literal
 transStr :: CString -> AST.Location -> EnvM ([BindingOrName], SType)

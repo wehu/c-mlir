@@ -104,6 +104,7 @@ void foo() {
   int v1 = 1;
   long v2 = 1L;
   float v3 = 0.1;
+  double v4 = 0.1L;
 }
       |] `shouldBeTranslatedAs` [r|
 module  {
@@ -124,6 +125,10 @@ module  {
     %3 = memref.alloca() : memref<1xf32>
     %c0_2 = arith.constant 0 : index
     memref.store %cst, %3[%c0_2] : memref<1xf32>
+    %cst_3 = arith.constant 1.000000e-01 : f64
+    %4 = memref.alloca() : memref<1xf64>
+    %c0_4 = arith.constant 0 : index
+    memref.store %cst_3, %4[%c0_4] : memref<1xf64>
     return
   }
 }
