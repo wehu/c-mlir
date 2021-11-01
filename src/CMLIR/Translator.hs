@@ -505,9 +505,14 @@ transConst (CStrConst s node) = transStr s (getPos node)
 
 -- | Translate an integer literal
 transInt :: CInteger -> AST.Location -> EnvM ([BindingOrName], SType)
-transInt (CInteger i _ _) loc = do
+transInt (CInteger i _ flag) loc = do
   id <- freshName
-  let ty = AST.IntegerType AST.Signless 32
+  let bits | testFlag FlagUnsigned flag = 32
+           | testFlag FlagLong flag = 64
+           | testFlag FlagLongLong flag = 64
+           | testFlag FlagImag flag = 32
+           | otherwise = 32
+      ty = AST.IntegerType AST.Signless bits
   return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral i))], (ty, True))
 
 -- | Translate a char literal
@@ -518,7 +523,7 @@ transChar (CChar c _) loc = do
   return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral $ ord c))], (ty, True))
 transChar c loc = error "unsupported chars"
 
--- | Translate chars literal
+-- | Translate float literal
 transFloat :: CFloat -> AST.Location -> EnvM ([BindingOrName], SType)
 transFloat (CFloat str) loc = do
   id <- freshName
