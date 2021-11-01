@@ -65,6 +65,9 @@ initEnv = Env{decls = [],
               vars = M.empty,
               idCounter = 0}
 
+--------------------------------------------------------------------
+-- Env helpers
+
 underScope action = do
   env <- getUserState
   result <- action
@@ -99,6 +102,33 @@ freshName = do
 unsupported :: (Pretty a) => a -> b
 unsupported a = error $ "unsupported:\n" ++ show (pretty a)
 
+--------------------------------------------------------------------------
+-- AST translators
+
+-- | Helper to get the binding id
+lastId :: [BindingOrName] -> BU.ByteString
+lastId [] = error "no intruction"
+lastId bs =
+  case last bs of
+    Left (n AST.:= v) -> n
+    Right n -> n
+    Left e -> error "unsupported"
+
+-- | Helper to create constant zero
+const0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
+
+-- | Helper to collect an array access to memref access by indices
+collectIndices src indices =
+      case src of
+        (CIndex src' index' _) -> collectIndices src' (index':indices)
+        _ -> (src, indices)
+
+-- | Helper to convert an integer to index type if neccessary
+toIndex loc i srcTy =
+  if srcTy == AST.IndexType then return (Right i, i)
+  else (\id -> (Left $ id AST.:= Arith.IndexCast loc AST.IndexType i, id)) <$> freshName
+
+-- | Translate c AST to MLIR
 translateToMLIR :: CTranslUnit -> IO String
 translateToMLIR tu =
    MLIR.withContext (\ctx -> do
@@ -119,11 +149,13 @@ translateToMLIR tu =
      unless check $ exitWith (ExitFailure 1)
      BU.toString <$> MLIR.showOperation {-WithLocation-} nativeOp)
 
+-- | Register all function types into env
 registerFunction :: FunDef -> EnvM ()
 registerFunction f@(FunDef var stmt node) = do
   let (name, (ty, sign)) = varDecl var
   addVar name (BU.fromString name, (ty, sign), True)
 
+-- | Translate a function to mlir AST
 transFunction :: FunDef -> EnvM AST.Binding
 transFunction f@(FunDef var stmt node) = underScope $ do
   let (name, (ty, sign)) = varDecl var
@@ -133,6 +165,7 @@ transFunction f@(FunDef var stmt node) = underScope $ do
   b <- transBlock args stmt Nothing
   return $ AST.Do $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
 
+-- | Translate a function block
 transBlock :: [(AST.Name, AST.Type)] -> CStatement NodeInfo -> Maybe AST.Binding -> EnvM AST.Block
 transBlock args (CCompound labels items _) terminator = do
   id <- freshName
@@ -143,6 +176,7 @@ transBlock args (CCompound labels items _) terminator = do
   return $ AST.Block id args (ops ^..traverse._Left ++ term)
 transBlock args s _ = unsupported s
 
+-- | Translate a statement in block
 transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [BindingOrName]
 transBlockItem (CBlockStmt s) = transStmt s
 transBlockItem (CBlockDecl decl) = do
@@ -151,6 +185,7 @@ transBlockItem (CBlockDecl decl) = do
   getUserState >>= (\s -> join <$> mapM transLocalDecl (objDefs s))
 transBlockItem s = unsupported s
 
+-- | Translate a local variable declaration
 transLocalDecl :: ObjDef -> EnvM [BindingOrName]
 transLocalDecl (ObjDef var init node) = do
   id <- freshName
@@ -170,20 +205,14 @@ transLocalDecl (ObjDef var init node) = do
   addVar n (id, t, True)
   return $ fromMaybe [] initBs ++ [b] ++ st
 
+-- | Translate an initalization expression
 transInit :: CInitializer NodeInfo -> EnvM [BindingOrName]
 transInit (CInitExpr e node) = do
   bs <- transExpr e
   return $ bs ^._1
 transInit init = unsupported init
 
-lastId :: [BindingOrName] -> BU.ByteString
-lastId [] = error "no intruction"
-lastId bs =
-  case last bs of
-    Left (n AST.:= v) -> n
-    Right n -> n
-    Left e -> error "unsupported"
-
+-- | Translate a statement
 transStmt :: CStatement NodeInfo -> EnvM [BindingOrName]
 transStmt (CReturn Nothing node) =
   return [Left $ AST.Do $ Std.Return (getPos node) []]
@@ -251,8 +280,7 @@ transStmt (CIf cond t Nothing node) = do
   return $ condBs ++ [Left if_]
 transStmt e = unsupported e
 
-const0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
-
+-- | Translate en expression
 transExpr :: CExpression NodeInfo -> EnvM ([BindingOrName], SType)
 transExpr (CConst c) = transConst c
 transExpr (CVar ident node) = do
@@ -421,27 +449,21 @@ transExpr (CCall (CVar ident _) args node) = do
   return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (resTy, sign))
 transExpr e = unsupported e
 
-collectIndices src indices =
-      case src of
-        (CIndex src' index' _) -> collectIndices src' (index':indices)
-        _ -> (src, indices)
-
-toIndex loc i srcTy =
-  if srcTy == AST.IndexType then return (Right i, i)
-  else (\id -> (Left $ id AST.:= Arith.IndexCast loc AST.IndexType i, id)) <$> freshName
-
+-- | Translate a constant expression
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)
 transConst (CIntConst i node) = transInt i (getPos node)
 transConst (CCharConst c node) = transChar c (getPos node)
 transConst (CFloatConst f node) = transFloat f (getPos node)
 transConst (CStrConst s node) = transStr s (getPos node)
 
+-- | Translate an integer literal
 transInt :: CInteger -> AST.Location -> EnvM ([BindingOrName], SType)
 transInt (CInteger i _ _) loc = do
   id <- freshName
   let ty = AST.IntegerType AST.Signless 32
   return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral i))], (ty, True))
 
+-- | Translate a char literal
 transChar :: CChar -> AST.Location -> EnvM ([BindingOrName], SType)
 transChar (CChar c _) loc = do
   id <- freshName
@@ -449,14 +471,19 @@ transChar (CChar c _) loc = do
   return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral $ ord c))], (ty, True))
 transChar c loc = error "unsupported chars"
 
+-- | Translate chars literal
 transFloat :: CFloat -> AST.Location -> EnvM ([BindingOrName], SType)
 transFloat (CFloat str) loc = do
   id <- freshName
   let ty = AST.Float32Type
   return ([Left $ id AST.:= Arith.Constant loc ty (AST.FloatAttr ty $ read str)], (ty, True))
 
+-- | Translate string literal
 transStr :: CString -> AST.Location -> EnvM ([BindingOrName], SType)
 transStr s@(CString str _) loc = error $ "unsupported for string " ++ str
+
+------------------------------------------------------------------------------
+-- AST Handlers
 
 handleTag :: DeclEvent -> EnvM ()
 handleTag (TagEvent (CompDef compT)) = return ()
