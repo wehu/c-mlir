@@ -101,8 +101,8 @@ freshName = do
   modifyUserState (\s -> s{idCounter = idCounter s + 1})
   return $ BU.fromString $ show id
 
-unsupported :: (Pretty a) => a -> b
-unsupported a = error $ "unsupported:\n" ++ show (pretty a)
+unsupported :: (Pretty a) => Position -> a -> b
+unsupported pos a = error $ "unsupported:\n" ++ show (pretty a) ++ "@" ++ show pos
 
 --------------------------------------------------------------------------
 -- AST translators
@@ -167,7 +167,7 @@ translateToMLIR tu =
 -- | Translate global declaration
 transGDecl :: Decl -> EnvM [AST.Binding]
 transGDecl decl@(Decl var node) = do
-   let (name, (ty, sign)) = varDecl var
+   let (name, (ty, sign)) = varDecl (posOf node) var
    funcs <- funsWithBody <$> getUserState
    let found = M.lookup name funcs
    if isn't _Nothing found then return []
@@ -176,23 +176,23 @@ transGDecl decl@(Decl var node) = do
        AST.FunctionType argType resultTypes -> do
          let f = AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region []
          return [AST.Do f{AST.opAttributes=AST.opAttributes f <> AST.namedAttribute "sym_visibility" (AST.StringAttr "private")}]
-       _ -> unsupported decl
+       _ -> unsupported (posOfNode node) decl
 
 -- | Register all function types into env
 registerFunction :: Decl -> EnvM ()
 registerFunction f@(Decl var node) = do
-  let (name, (ty, sign)) = varDecl var
+  let (name, (ty, sign)) = varDecl (posOf node) var
   addVar name (BU.fromString name, (ty, sign), True)
 
 -- | Translate a function to mlir AST
 transFunction :: FunDef -> EnvM AST.Binding
 transFunction f@(FunDef var stmt node) = do
-  let (name, (ty, sign)) = varDecl var
+  let (name, (ty, sign)) = varDecl (posOf node) var
       args = over (traverse . _1) BU.fromString $
-               over (traverse . _2) fst $ params var
+               over (traverse . _2) fst $ params (posOf node) var
   modifyUserState (\s -> s{funsWithBody=M.insert name True (funsWithBody s)})
   underScope $ do
-    mapM_ (uncurry addVar) [(a ^._1, (BU.fromString $ a ^._1, a^._2, False)) | a <- params var]
+    mapM_ (uncurry addVar) [(a ^._1, (BU.fromString $ a ^._1, a^._2, False)) | a <- params (posOf node) var]
     b <- transBlock args [] stmt []
     return $ AST.Do $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
 
@@ -204,7 +204,7 @@ transBlock args pre (CCompound labels items _) post = do
   ops <- join <$> mapM transBlockItem items
   -- forM_ lnames (`addLabel` id)
   return $ AST.Block id args (pre ++ ops ^..traverse._Left ++ post)
-transBlock args _ s _ = unsupported s
+transBlock args _ s _ = unsupported (posOf s) s
 
 -- | Translate a statement in block
 transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [BindingOrName]
@@ -213,7 +213,7 @@ transBlockItem (CBlockDecl decl) = do
   modifyUserState (\s -> s{objDefs=[]})
   withExtDeclHandler (analyseDecl True decl) handleLDecl
   getUserState >>= (\s -> join <$> mapM transLocalDecl (objDefs s))
-transBlockItem s = unsupported s
+transBlockItem s = unsupported (posOf s) s
 
 -- | Translate a local variable declaration
 transLocalDecl :: ObjDef -> EnvM [BindingOrName]
@@ -222,7 +222,7 @@ transLocalDecl (ObjDef var init node) = do
   id0 <- freshName
   id1 <- freshName
   initBs <- mapM transInit init
-  let (n, t) = varDecl var
+  let (n, t) = varDecl (posOf node) var
       mt = case t of
              (t@AST.MemRefType{}, _) -> t
              (t, _) -> AST.MemRefType [Just 1] t Nothing Nothing
@@ -240,7 +240,7 @@ transInit :: CInitializer NodeInfo -> EnvM [BindingOrName]
 transInit (CInitExpr e node) = do
   bs <- transExpr e
   return $ bs ^._1
-transInit init = unsupported init
+transInit init = unsupported (posOf init) init
 
 -- | Translate a statement
 transStmt :: CStatement NodeInfo -> EnvM [BindingOrName]
@@ -319,7 +319,7 @@ transStmt (CIf cond t Nothing node) = do
   tb <- underScope $ transBlock [] [] t [AST.Do $ SCF.yield loc [] []]
   let if_ = AST.Do $ SCF.ifelse loc [] (lastId condBs) (AST.Region [tb]) (AST.Region [])
   return $ condBs ++ [Left if_]
-transStmt e = unsupported e
+transStmt e = unsupported (posOf e) e
 
 -- | Translate an expression
 transExpr :: CExpression NodeInfo -> EnvM ([BindingOrName], SType)
@@ -339,7 +339,7 @@ transExpr (CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
   let name = case src of
                CVar ident _ -> identName ident
-               _ -> unsupported src
+               _ -> unsupported (posOf src) src
   (id, ty, isMemRef) <- lookupVar name
   (rhsBs, rhsTy) <- transExpr (case op of
                       CAssignOp -> rhs
@@ -368,7 +368,7 @@ transExpr (CAssign op lhs rhs node) = do
     toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
     let (dstTy, sign) = case ty of
                   (AST.MemRefType _ ty _ _, sign) -> (ty, sign)
-                  _ -> unsupported src
+                  _ -> unsupported (posOf src) src
     stId <- freshName
     let st = id AST.:= MemRef.Store rhsId id (toIndices ^.. traverse . _2)
     return (rhsBs ++ join (indexBs ^.. traverse . _1) ++
@@ -421,21 +421,21 @@ transExpr (CIndex e index node) = do
   let (src, indices) = collectIndices e [index]
   let name = case src of
                CVar ident _ -> identName ident
-               _ -> unsupported src
+               _ -> unsupported (posOf src) src
   (srcId, (srcTy, sign), isMemRef) <- lookupVar name
   indexBs <- mapM transExpr indices
   let indexIds = map lastId (indexBs ^.. traverse . _1)
   toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
   let ty = case srcTy of
              AST.MemRefType _ ty _ _ -> ty
-             _ -> unsupported src
+             _ -> unsupported (posOf src) src
   id <- freshName
   let ld = id AST.:= MemRef.Load ty srcId (toIndices ^.. traverse . _2)
   return (join (indexBs ^.. traverse . _1) ++
           toIndices ^.. traverse . _1 ++ [Left ld, Right id], (ty, sign))
 transExpr c@(CCast t e node) = do
   (srcBs, (srcTy, srcSign)) <- transExpr e
-  (dstTy, dstSign) <- type_ <$> analyseTypeDecl t
+  (dstTy, dstSign) <- type_ (posOf node) <$> analyseTypeDecl t
   if srcTy == dstTy then return (srcBs, (srcTy, srcSign))
   else do
     dstId <- freshName
@@ -457,7 +457,7 @@ transExpr c@(CCast t e node) = do
           | isInt srcTy && isFloat dstTy =
             [Left $ id AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc (floatTy $ bits srcTy) srcId
             ,Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncF else Arith.ExtF) loc dstTy id]
-          | otherwise = unsupported c
+          | otherwise = unsupported (posOf c) c
     return (srcBs ++ casts ++ [Right dstId], (dstTy, dstSign))
   where isFloat ty = case ty of
                        AST.Float16Type -> True
@@ -468,7 +468,7 @@ transExpr c@(CCast t e node) = do
                          16 -> AST.Float16Type
                          32 -> AST.Float32Type
                          64 -> AST.Float64Type
-                         _ -> unsupported c
+                         _ -> unsupported (posOf c) c
         isInt ty = case ty of
                      AST.IntegerType _ _ -> True
                      _ -> False
@@ -477,7 +477,7 @@ transExpr c@(CCast t e node) = do
                     AST.Float32Type -> 32
                     AST.Float64Type -> 64
                     AST.IntegerType _ bs -> bs
-                    _ -> unsupported c
+                    _ -> unsupported (posOf c) c
 transExpr (CCall (CVar ident _) args node) = do
   let name = identName ident
   (_, (ty, sign), _) <- lookupVar name
@@ -488,7 +488,7 @@ transExpr (CCall (CVar ident _) args node) = do
   argsBs <- mapM transExpr args
   let call = id AST.:= Std.call (getPos node) resTy (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
   return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (resTy, sign))
-transExpr e = unsupported e
+transExpr e = unsupported (posOf e) e
 
 -- | Translate a constant expression
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)
@@ -562,13 +562,13 @@ varName :: VarName -> String
 varName (VarName ident _) = identName ident
 varName NoName = ""
 
-type_ :: Type -> SType
-type_ (FunctionType ty attrs) = f ty
+type_ :: Position -> Type -> SType
+type_ pos (FunctionType ty attrs) = f ty
   where f (FunType resType argTypes _) =
-            (AST.FunctionType (map (\t -> paramDecl t ^. _2 . _1) argTypes)
-                              (map (\t -> type_ t ^._1) [resType]), type_ resType ^. _2)
-        f (FunTypeIncomplete ty) = type_ ty
-type_ ty@(DirectType name quals attrs) =
+            (AST.FunctionType (map (\t -> paramDecl pos t ^. _2 . _1) argTypes)
+                              (map (\t -> type_ pos t ^._1) [resType]), type_ pos resType ^. _2)
+        f (FunTypeIncomplete ty) = type_ pos ty
+type_ pos ty@(DirectType name quals attrs) =
   case name of
     TyVoid -> (AST.NoneType, False)
     TyIntegral (id -> TyBool) -> (AST.IntegerType AST.Signless 1, False)
@@ -588,19 +588,19 @@ type_ ty@(DirectType name quals attrs) =
     TyFloating (id -> TyFloat) -> (AST.Float32Type, True)
     TyFloating (id -> TyDouble) -> (AST.Float64Type, True)
     TyFloating (id -> TyLDouble) -> (AST.Float64Type, True)
-    TyFloating (id -> TyFloatN n _) -> unsupported ty
-    TyComplex t -> type_ (DirectType (TyFloating t) quals attrs)
-    TyComp ref -> unsupported ty
-    TyEnum ref -> unsupported ty
-    TyBuiltin _ -> unsupported ty
-    _ -> unsupported ty
-type_ ty@(PtrType t quals attrs) = unsupported ty --AST.MemRefType [Nothing] (type_ t) Nothing Nothing
-type_ (ArrayType t size quals attrs) =
+    TyFloating (id -> TyFloatN n _) -> unsupported pos ty
+    TyComplex t -> type_ pos (DirectType (TyFloating t) quals attrs)
+    TyComp ref -> unsupported pos ty
+    TyEnum ref -> unsupported pos ty
+    TyBuiltin _ -> unsupported pos ty
+    _ -> unsupported pos ty
+type_ pos ty@(PtrType t quals attrs) = unsupported pos ty --AST.MemRefType [Nothing] (type_ t) Nothing Nothing
+type_ pos (ArrayType t size quals attrs) =
   let s = arraySize size
-   in case type_ t of
+   in case type_ pos t of
         (AST.MemRefType sizes t Nothing Nothing, sign) -> (AST.MemRefType (s:sizes) t Nothing Nothing, sign)
         (t, sign) -> (AST.MemRefType [s] t Nothing Nothing, sign)
-type_ (TypeDefType (TypeDefRef ident t _) quals attrs) = type_ t
+type_ pos (TypeDefType (TypeDefRef ident t _) quals attrs) = type_ pos t
 
 arraySize :: ArraySize -> Maybe Int
 arraySize (UnknownArraySize static) =
@@ -610,19 +610,19 @@ arraySize (ArraySize static expr) =
     Just e -> Just $ fromIntegral e
     Nothing -> error "unsupported dynamic array size"
 
-paramDecl :: ParamDecl -> (String, SType)
-paramDecl (ParamDecl var _) = varDecl var
-paramDecl (AbstractParamDecl var _) = varDecl var
+paramDecl :: Position -> ParamDecl -> (String, SType)
+paramDecl pos (ParamDecl var _) = varDecl pos var
+paramDecl pos (AbstractParamDecl var _) = varDecl pos var
 
-varDecl :: VarDecl -> (String, SType)
-varDecl (VarDecl name attrs ty) = (varName name, type_ ty)
+varDecl :: Position -> VarDecl -> (String, SType)
+varDecl pos (VarDecl name attrs ty) = (varName name, type_ pos ty)
 
-params :: VarDecl -> [(String, SType)]
-params (VarDecl name attr ty) = f ty
+params :: Position -> VarDecl -> [(String, SType)]
+params pos (VarDecl name attr ty) = f ty
   where f (FunctionType ty attrs) = ps ty
-        f _ = unsupported ty
-        ps (FunType resType argTypes _) = map paramDecl argTypes
-        ps (FunTypeIncomplete ty) = unsupported ty
+        f _ = unsupported pos ty
+        ps (FunType resType argTypes _) = map (paramDecl pos) argTypes
+        ps (FunTypeIncomplete ty) = unsupported pos ty
 
 getPos :: NodeInfo -> AST.Location
 getPos n =
