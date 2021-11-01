@@ -269,3 +269,105 @@ module  {
 }
       |]
 
+    it "can translate int compare operations" $ do
+      [r|
+void foo() {
+  int v0,v1;
+  v0 == v1;
+  v0 != v1;
+  v0 > v1;
+  v0 < v1;
+  v0 >= v1;
+  v0 <= v1;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xi32>
+    %1 = memref.alloca() : memref<1xi32>
+    %c0 = arith.constant 0 : index
+    %2 = memref.load %0[%c0] : memref<1xi32>
+    %c0_0 = arith.constant 0 : index
+    %3 = memref.load %1[%c0_0] : memref<1xi32>
+    %4 = arith.cmpi eq, %2, %3 : i32
+    %c0_1 = arith.constant 0 : index
+    %5 = memref.load %0[%c0_1] : memref<1xi32>
+    %c0_2 = arith.constant 0 : index
+    %6 = memref.load %1[%c0_2] : memref<1xi32>
+    %7 = arith.cmpi ne, %5, %6 : i32
+    %c0_3 = arith.constant 0 : index
+    %8 = memref.load %0[%c0_3] : memref<1xi32>
+    %c0_4 = arith.constant 0 : index
+    %9 = memref.load %1[%c0_4] : memref<1xi32>
+    %10 = arith.cmpi sgt, %8, %9 : i32
+    %c0_5 = arith.constant 0 : index
+    %11 = memref.load %0[%c0_5] : memref<1xi32>
+    %c0_6 = arith.constant 0 : index
+    %12 = memref.load %1[%c0_6] : memref<1xi32>
+    %13 = arith.cmpi slt, %11, %12 : i32
+    %c0_7 = arith.constant 0 : index
+    %14 = memref.load %0[%c0_7] : memref<1xi32>
+    %c0_8 = arith.constant 0 : index
+    %15 = memref.load %1[%c0_8] : memref<1xi32>
+    %16 = arith.cmpi sge, %14, %15 : i32
+    %c0_9 = arith.constant 0 : index
+    %17 = memref.load %0[%c0_9] : memref<1xi32>
+    %c0_10 = arith.constant 0 : index
+    %18 = memref.load %1[%c0_10] : memref<1xi32>
+    %19 = arith.cmpi sle, %17, %18 : i32
+    return
+  }
+}
+      |]
+    
+    it "can translate unsigned int compare operations" $ do
+      [r|
+void foo() {
+  unsigned int v0,v1;
+  v0 == v1;
+  v0 != v1;
+  v0 > v1;
+  v0 < v1;
+  v0 >= v1;
+  v0 <= v1;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xi32>
+    %1 = memref.alloca() : memref<1xi32>
+    %c0 = arith.constant 0 : index
+    %2 = memref.load %0[%c0] : memref<1xi32>
+    %c0_0 = arith.constant 0 : index
+    %3 = memref.load %1[%c0_0] : memref<1xi32>
+    %4 = arith.cmpi eq, %2, %3 : i32
+    %c0_1 = arith.constant 0 : index
+    %5 = memref.load %0[%c0_1] : memref<1xi32>
+    %c0_2 = arith.constant 0 : index
+    %6 = memref.load %1[%c0_2] : memref<1xi32>
+    %7 = arith.cmpi ne, %5, %6 : i32
+    %c0_3 = arith.constant 0 : index
+    %8 = memref.load %0[%c0_3] : memref<1xi32>
+    %c0_4 = arith.constant 0 : index
+    %9 = memref.load %1[%c0_4] : memref<1xi32>
+    %10 = arith.cmpi ugt, %8, %9 : i32
+    %c0_5 = arith.constant 0 : index
+    %11 = memref.load %0[%c0_5] : memref<1xi32>
+    %c0_6 = arith.constant 0 : index
+    %12 = memref.load %1[%c0_6] : memref<1xi32>
+    %13 = arith.cmpi ult, %11, %12 : i32
+    %c0_7 = arith.constant 0 : index
+    %14 = memref.load %0[%c0_7] : memref<1xi32>
+    %c0_8 = arith.constant 0 : index
+    %15 = memref.load %1[%c0_8] : memref<1xi32>
+    %16 = arith.cmpi uge, %14, %15 : i32
+    %c0_9 = arith.constant 0 : index
+    %17 = memref.load %0[%c0_9] : memref<1xi32>
+    %c0_10 = arith.constant 0 : index
+    %18 = memref.load %1[%c0_10] : memref<1xi32>
+    %19 = arith.cmpi ule, %17, %18 : i32
+    return
+  }
+}
+      |]
+
