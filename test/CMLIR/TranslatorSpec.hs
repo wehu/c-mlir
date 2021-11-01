@@ -370,4 +370,54 @@ module  {
   }
 }
       |]
+    
+    it "can translate function arguments" $ do
+      [r|
+void foo(int arg0, float arg1) {
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo(%arg0: i32, %arg1: f32) {
+    return
+  }
+}
+      |]
+
+    it "can translate function call" $ do
+      [r|
+int bar(int arg0) {
+  return arg0;
+}
+void foo(int arg0, float arg1) {
+  bar(arg0);
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @bar(%arg0: i32) -> i32 {
+    return %arg0 : i32
+  }
+  func @foo(%arg0: i32, %arg1: f32) {
+    %0 = call @bar(%arg0) : (i32) -> i32
+    return
+  }
+}
+      |]
+    
+    it "can translate extern functions" $ do
+      [r|
+int bar(int arg0);
+void foo(int arg0, float arg1) {
+  bar(arg0) + 1;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func private @bar(i32) -> i32
+  func @foo(%arg0: i32, %arg1: f32) {
+    %0 = call @bar(%arg0) : (i32) -> i32
+    %c1_i32 = arith.constant 1 : i32
+    %1 = arith.addi %0, %c1_i32 : i32
+    return
+  }
+}
+      |]
 
