@@ -517,3 +517,80 @@ module  {
 }
       |]
 
+    it "can translate nested for/if" $ do
+      [r|
+void foo() {
+  int i,j;
+  for (int i=0; i<10; i+=1) {
+    if (i > j) {
+    }
+  }
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xi32>
+    %1 = memref.alloca() : memref<1xi32>
+    affine.for %arg0 = 0 to 10 {
+      %2 = arith.index_cast %arg0 : index to i32
+      %c0 = arith.constant 0 : index
+      %3 = memref.load %1[%c0] : memref<1xi32>
+      %4 = arith.cmpi sgt, %2, %3 : i32
+      scf.if %4 {
+      }
+    }
+    return
+  }
+}
+      |]
+    
+    it "can translate nested for/for" $ do
+      [r|
+void foo() {
+  for (int i=0; i<10; i+=1) {
+    for (int j=0; j<10; j+=2) {
+    }
+  }
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    affine.for %arg0 = 0 to 10 {
+      %0 = arith.index_cast %arg0 : index to i32
+      affine.for %arg1 = 0 to 10 step 2 {
+        %1 = arith.index_cast %arg1 : index to i32
+      }
+    }
+    return
+  }
+}
+      |]
+
+    it "can translate nested if/for" $ do
+      [r|
+void foo() {
+  int i, j;
+  if (i != j) {
+    for (int j=0; j<10; j+=2) {
+    }
+  }
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xi32>
+    %1 = memref.alloca() : memref<1xi32>
+    %c0 = arith.constant 0 : index
+    %2 = memref.load %0[%c0] : memref<1xi32>
+    %c0_0 = arith.constant 0 : index
+    %3 = memref.load %1[%c0_0] : memref<1xi32>
+    %4 = arith.cmpi ne, %2, %3 : i32
+    scf.if %4 {
+      affine.for %arg0 = 0 to 10 step 2 {
+        %5 = arith.index_cast %arg0 : index to i32
+      }
+    }
+    return
+  }
+}
+      |]
