@@ -71,7 +71,7 @@ initEnv = Env{decls = [],
 underScope action = do
   env <- getUserState
   result <- action
-  id <- idCounter <$> getUserState 
+  id <- idCounter <$> getUserState
   modifyUserState (const env{idCounter=id})
   return result
 
@@ -128,6 +128,10 @@ toIndex loc i srcTy =
   if srcTy == AST.IndexType then return (Right i, i)
   else (\id -> (Left $ id AST.:= Arith.IndexCast loc AST.IndexType i, id)) <$> freshName
 
+fromIndex loc i dstTy =
+  if dstTy == AST.IndexType then return (Right i, i)
+  else (\id -> (Left $ id AST.:= Arith.IndexCast loc dstTy i, id)) <$> freshName
+
 -- | Translate c AST to MLIR
 translateToMLIR :: CTranslUnit -> IO String
 translateToMLIR tu =
@@ -162,19 +166,18 @@ transFunction f@(FunDef var stmt node) = underScope $ do
       args = over (traverse . _1) BU.fromString $
                over (traverse . _2) fst $ params var
   mapM_ (uncurry addVar) [(a ^._1, (BU.fromString $ a ^._1, a^._2, False)) | a <- params var]
-  b <- transBlock args stmt Nothing
+  b <- transBlock args [] stmt []
   return $ AST.Do $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
 
 -- | Translate a function block
-transBlock :: [(AST.Name, AST.Type)] -> CStatement NodeInfo -> Maybe AST.Binding -> EnvM AST.Block
-transBlock args (CCompound labels items _) terminator = do
+transBlock :: [(AST.Name, AST.Type)] -> [AST.Binding] -> CStatement NodeInfo -> [AST.Binding] -> EnvM AST.Block
+transBlock args pre (CCompound labels items _) post = do
   id <- freshName
   -- let lnames = map identName labels
   ops <- join <$> mapM transBlockItem items
   -- forM_ lnames (`addLabel` id)
-  let term = [fromJust terminator | isn't _Nothing terminator]
-  return $ AST.Block id args (ops ^..traverse._Left ++ term)
-transBlock args s _ = unsupported s
+  return $ AST.Block id args (pre ++ ops ^..traverse._Left ++ post)
+transBlock args _ s _ = unsupported s
 
 -- | Translate a statement in block
 transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [BindingOrName]
@@ -232,10 +235,16 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                 body@(CCompound _ (_:_) _) node)
   | ident0 == ident1 && ident1 == ident2 = do
   let name = identName ident0
+      loc = getPos node
   b <- underScope $ do
-    addVar name (BU.fromString name, (AST.IndexType, True), False)
-    transBlock [(BU.fromString name, AST.IndexType)] body
-      (Just $ AST.Do $ Affine.yield (getPos node) [] [])
+    let varName = BU.fromString name
+        ty = AST.IntegerType AST.Signless 32
+    (index, id) <- fromIndex loc varName ty
+    addVar name (id, (ty, True), False)
+    transBlock [(varName, AST.IndexType)]
+      [b | isn't _Right index, (Left b) <- [index]]
+      body
+      [AST.Do $ Affine.yield (getPos node) [] []]
   let for = AST.Do $ Affine.for
                   (getPos node)
                   (fromIntegral $ fromJust $ intValue lb)
@@ -254,9 +263,14 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
   let name = identName ident0
       loc = getPos node
   b <- underScope $ do
-    addVar name (BU.fromString name, (AST.IndexType, True), False)
-    transBlock [(BU.fromString name, AST.IndexType)] body
-      (Just $ AST.Do $ SCF.yield loc [] [])
+    let varName = BU.fromString name
+        ty = AST.IntegerType AST.Signless 32
+    (index, id) <- fromIndex loc varName ty
+    addVar name (id, (ty, True), False)
+    transBlock [(varName, AST.IndexType)]
+      [b | isn't _Right index, (Left b) <- [index]]
+      body
+      [AST.Do $ SCF.yield loc [] []]
   (lbBs, (lbTy, _)) <- transExpr lb
   (ubBs, (ubTy, _)) <- transExpr ub
   (stepBs, (stepTy, _)) <- transExpr step
@@ -268,19 +282,19 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
 transStmt (CIf cond t (Just f) node) = do
   let loc = getPos node
   (condBs, _) <- transExpr cond
-  tb <- underScope $ transBlock [] t (Just $ AST.Do $ SCF.yield loc [] [])
-  fb <- underScope $ transBlock [] f (Just $ AST.Do $ SCF.yield loc [] [])
+  tb <- underScope $ transBlock [] [] t [AST.Do $ SCF.yield loc [] []]
+  fb <- underScope $ transBlock [] [] f [AST.Do $ SCF.yield loc [] []]
   let if_ = AST.Do $ SCF.ifelse loc [] (lastId condBs) (AST.Region [tb]) (AST.Region [fb])
   return $ condBs ++ [Left if_]
 transStmt (CIf cond t Nothing node) = do
   let loc = getPos node
   (condBs, _) <- transExpr cond
-  tb <- underScope $ transBlock [] t (Just $ AST.Do $ SCF.yield loc [] [])
+  tb <- underScope $ transBlock [] [] t [AST.Do $ SCF.yield loc [] []]
   let if_ = AST.Do $ SCF.ifelse loc [] (lastId condBs) (AST.Region [tb]) (AST.Region [])
   return $ condBs ++ [Left if_]
 transStmt e = unsupported e
 
--- | Translate en expression
+-- | Translate an expression
 transExpr :: CExpression NodeInfo -> EnvM ([BindingOrName], SType)
 transExpr (CConst c) = transConst c
 transExpr (CVar ident node) = do
@@ -478,7 +492,7 @@ transFloat (CFloat str) loc = do
   let ty = AST.Float32Type
   return ([Left $ id AST.:= Arith.Constant loc ty (AST.FloatAttr ty $ read str)], (ty, True))
 
--- | Translate string literal
+-- | Translate a string literal
 transStr :: CString -> AST.Location -> EnvM ([BindingOrName], SType)
 transStr s@(CString str _) loc = error $ "unsupported for string " ++ str
 
