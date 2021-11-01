@@ -18,6 +18,7 @@ import qualified MLIR.AST.Dialect.MemRef as MemRef
 import qualified CMLIR.Dialect.MemRef as MemRef
 import qualified MLIR.AST.Dialect.Affine as Affine
 import qualified CMLIR.Dialect.Affine as Affine
+import qualified CMLIR.Dialect.SCF as SCF
 
 import Language.C.Syntax.AST
 import Language.C.Analysis.AstAnalysis
@@ -67,7 +68,8 @@ initEnv = Env{decls = [],
 underScope action = do
   env <- getUserState
   result <- action
-  modifyUserState (const env)
+  id <- idCounter <$> getUserState 
+  modifyUserState (const env{idCounter=id})
   return result
 
 addLabel name label =
@@ -112,7 +114,7 @@ translateToMLIR tu =
                    case res of
                      Left errs -> error $ show errs
                      Right (res, _) -> res
-     --MLIR.dump nativeOp
+     -- MLIR.dump nativeOp
      check <- MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
      BU.toString <$> MLIR.showOperation {-WithLocation-} nativeOp)
@@ -212,6 +214,28 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                   (fromIntegral $ fromJust $ intValue step)
                   $ AST.Region [b]
   return [Left for]
+transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
+                              [(Just (CDeclr (Just ident0) [] Nothing [] _),
+                                Just (CInitExpr lb _),
+                                Nothing)] _))
+                (Just (CBinary CLeOp (CVar ident1 _) ub _))
+                (Just (CAssign CAddAssOp (CVar ident2 _) step _))
+                body@(CCompound _ (_:_) _) node)
+  | ident0 == ident1 && ident1 == ident2 = do
+  let name = identName ident0
+      loc = getPos node
+  b <- underScope $ do
+    addVar name (BU.fromString name, (AST.IndexType, True), False)
+    transBlock [(BU.fromString name, AST.IndexType)] body
+      (Just $ AST.Do $ SCF.yield loc [] [])
+  (lbBs, (lbTy, _)) <- transExpr lb
+  (ubBs, (ubTy, _)) <- transExpr ub
+  (stepBs, (stepTy, _)) <- transExpr step
+  (lbB, lbId) <- toIndex loc (lastId lbBs) lbTy
+  (ubB, ubId) <- toIndex loc (lastId ubBs) ubTy
+  (stepB, stepId) <- toIndex loc (lastId stepBs) stepTy
+  let for = AST.Do $ SCF.for loc [] lbId ubId stepId [] $ AST.Region [b]
+  return $ lbBs ++ ubBs ++ stepBs ++ [lbB, ubB, stepB, Left for]
 transStmt e = unsupported e
 
 const0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
