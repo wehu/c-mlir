@@ -3,10 +3,12 @@ module CMLIR.Parser where
 import Language.C
 import Language.C.Analysis.AstAnalysis
 import Language.C.Analysis.TravMonad
+import Language.C.Data.Position
 import Language.C.System.GCC
 import Control.Monad
 import System.IO
 import System.Exit
+import qualified Data.ByteString.UTF8 as BU
 
 analyse :: CTranslUnit -> Either String CTranslUnit
 analyse tu =
@@ -31,3 +33,5 @@ processFile cppOpts file =
                        exitWith (ExitFailure 1)
                      Right tu -> return tu
 
+processString :: String -> Either ParseError CTranslUnit 
+processString input = parseC (BU.fromString input) (position 0 "" 0 0 Nothing)

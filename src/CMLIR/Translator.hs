@@ -142,9 +142,12 @@ translateToMLIR tu =
                               modifyUserState (\s -> s{funDefs=[]})
                               withExtDeclHandler (analyseAST tu) handleFDef
                               getUserState  >>= mapM_ registerFunction . funDefs
+                              modifyUserState (\s -> s{decls=[]})
+                              withExtDeclHandler (analyseAST tu) handleGDecl
+                              ds <- getUserState >>= mapM transGDecl . decls
                               fs <- getUserState >>= mapM transFunction . funDefs
                               id <- freshName
-                              return $ AST.ModuleOp $ AST.Block id [] fs
+                              return $ AST.ModuleOp $ AST.Block id [] (join ds ++ fs)
                    case res of
                      Left errs -> error $ show errs
                      Right (res, _) -> res
@@ -152,6 +155,20 @@ translateToMLIR tu =
      check <- MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
      BU.toString <$> MLIR.showOperation {-WithLocation-} nativeOp)
+
+-- | Translate global declaration
+transGDecl :: Decl -> EnvM [AST.Binding]
+transGDecl decl@(Decl var node) = do
+   let (name, (ty, sign)) = varDecl var
+   funcs <- vars <$> getUserState
+   let found = M.lookup name funcs
+   if isn't _Nothing found then return []
+   else 
+     case ty of
+       AST.FunctionType argType resultTypes -> do
+         let f = AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region []
+         return [AST.Do f{AST.opAttributes=AST.opAttributes f <> AST.namedAttribute "sym_visibility" (AST.StringAttr "private")}]
+       _ -> unsupported decl
 
 -- | Register all function types into env
 registerFunction :: FunDef -> EnvM ()
@@ -505,7 +522,7 @@ handleTag (TagEvent (EnumDef enumT)) = return ()
 handleTag _ = return ()
 
 handleGDecl :: DeclEvent -> EnvM ()
-handleGDecl (DeclEvent (Declaration objDef)) = return ()
+handleGDecl (DeclEvent (Declaration decl)) = modifyUserState (\s -> s{decls=decls s ++ [decl]})
 handleGDecl _ = return ()
 
 handleFDef :: DeclEvent -> EnvM ()
