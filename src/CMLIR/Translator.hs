@@ -236,6 +236,13 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
   (stepB, stepId) <- toIndex loc (lastId stepBs) stepTy
   let for = AST.Do $ SCF.for loc [] lbId ubId stepId [] $ AST.Region [b]
   return $ lbBs ++ ubBs ++ stepBs ++ [lbB, ubB, stepB, Left for]
+transStmt (CIf cond t (Just f) node) = do
+  let loc = getPos node
+  (condBs, _) <- transExpr cond
+  tb <- underScope $ transBlock [] t (Just $ AST.Do $ SCF.yield loc [] [])
+  fb <- underScope $ transBlock [] f (Just $ AST.Do $ SCF.yield loc [] [])
+  let if_ = AST.Do $ SCF.if_ loc [] (lastId condBs) (AST.Region [tb]) (AST.Region [fb])
+  return $ condBs ++ [Left if_]
 transStmt e = unsupported e
 
 const0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
