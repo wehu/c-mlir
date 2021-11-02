@@ -1,10 +1,10 @@
 name:                c-mlir
 version:             0.1.0.0
-github:              "githubuser/c-mlir"
+github:              "wehu/c-mlir"
 license:             BSD3
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2021 Author name here"
+author:              "wei.hu"
+maintainer:          "wei.hu@enflame-tech.com"
+copyright:           "2021 Wei Hu"
 
 extra-source-files:
 - README.md

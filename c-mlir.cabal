@@ -7,11 +7,11 @@ cabal-version: 1.12
 name:           c-mlir
 version:        0.1.0.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/c-mlir#readme>
-homepage:       https://github.com/githubuser/c-mlir#readme
-bug-reports:    https://github.com/githubuser/c-mlir/issues
-author:         Author name here
-maintainer:     example@example.com
-copyright:      2021 Author name here
+homepage:       https://github.com/wehu/c-mlir#readme
+bug-reports:    https://github.com/wehu/c-mlir/issues
+author:         wei.hu
+maintainer:     wei.hu@enflame-tech.com
+copyright:      2021 Wei Hu
 license:        BSD3
 license-file:   LICENSE
 build-type:     Simple
@@ -21,7 +21,7 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/githubuser/c-mlir
+  location: https://github.com/wehu/c-mlir
 
 library
   exposed-modules:

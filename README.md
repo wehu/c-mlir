@@ -80,3 +80,8 @@ Run tests
 ```shell
 stack test
 ```
+
+Tranlate a C file
+```shell
+stack run -- test.c
+```
