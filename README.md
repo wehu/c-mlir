@@ -95,3 +95,8 @@ Dump IR with locations
 ```shell
 stack run -- test.c -loc
 ```
+
+Jit run
+```shell
+stack run -- test.c -jit
+```
