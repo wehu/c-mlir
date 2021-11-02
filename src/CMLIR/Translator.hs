@@ -7,6 +7,7 @@ module CMLIR.Translator where
 
 import qualified MLIR.AST.Builder as AST
 import qualified MLIR.AST as AST
+import qualified MLIR.Native.Pass as MLIR
 import MLIR.AST.Serialize
 import qualified Data.ByteString.UTF8 as BU
 import qualified MLIR.AST.Dialect.Arith as Arith
@@ -142,8 +143,8 @@ fromIndex loc i dstTy =
   else (\id -> (Left $ id AST.:= Arith.IndexCast loc dstTy i, id)) <$> freshName
 
 -- | Translate c AST to MLIR
-translateToMLIR :: CTranslUnit -> IO String
-translateToMLIR tu =
+translateToMLIR :: Bool -> CTranslUnit -> IO String
+translateToMLIR toLLVM tu =
    MLIR.withContext (\ctx -> do
      MLIR.registerAllDialects ctx
      nativeOp <- fromAST ctx (mempty, mempty) $ do
@@ -166,6 +167,17 @@ translateToMLIR tu =
                    case res of
                      Left errs -> error $ show errs
                      Right (res, _) -> res
+     when toLLVM $ do
+       Just m <- MLIR.moduleFromOperation nativeOp
+       MLIR.withPassManager ctx $ \pm -> do
+         MLIR.addConvertAffineToStandardPass pm
+         MLIR.addConvertSCFToStandardPass  pm
+         MLIR.addConvertMemRefToLLVMPass   pm
+         MLIR.addConvertVectorToLLVMPass   pm
+         MLIR.addConvertStandardToLLVMPass pm
+         MLIR.addConvertReconcileUnrealizedCastsPass pm
+         MLIR.runPasses pm m
+         return ()
      -- MLIR.dump nativeOp
      check <- MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
