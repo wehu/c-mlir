@@ -7,13 +7,15 @@ import Data.List
 import Options.Applicative
 import System.Environment
 import CMLIR.Parser
-import CMLIR.Translator (translateToMLIR)
+import CMLIR.Translator 
 
-specialOpts = ["-run", "-llvm"]
+specialOpts = ["-run", "-llvm", "-loc"]
 
 translate :: IO ()
 translate =
   do args <- getArgs
      let (cppOpts, files) = partition (isPrefixOf "-") args
+         trOpts = defaultOptions{toLLVM = "-llvm" `elem` cppOpts,
+                                 dumpLoc = "-loc" `elem` cppOpts} 
      mapM_ (\file -> processFile (cppOpts \\ specialOpts) file
-       >>= translateToMLIR ("-llvm" `elem` cppOpts) >>= putStrLn) files
+       >>= translateToMLIR trOpts >>= putStrLn) files

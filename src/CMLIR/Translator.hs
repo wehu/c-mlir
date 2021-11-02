@@ -142,9 +142,13 @@ fromIndex loc i dstTy =
   if dstTy == AST.IndexType then return (Right i, i)
   else (\id -> (Left $ id AST.:= Arith.IndexCast loc dstTy i, id)) <$> freshName
 
+data Options = Options {toLLVM :: Bool, dumpLoc :: Bool}
+
+defaultOptions = Options {toLLVM = False, dumpLoc = False}
+
 -- | Translate c AST to MLIR
-translateToMLIR :: Bool -> CTranslUnit -> IO String
-translateToMLIR toLLVM tu =
+translateToMLIR :: Options -> CTranslUnit -> IO String
+translateToMLIR opts tu =
    MLIR.withContext (\ctx -> do
      MLIR.registerAllDialects ctx
      nativeOp <- fromAST ctx (mempty, mempty) $ do
@@ -167,7 +171,7 @@ translateToMLIR toLLVM tu =
                    case res of
                      Left errs -> error $ show errs
                      Right (res, _) -> res
-     when toLLVM $ do
+     when (toLLVM opts) $ do
        Just m <- MLIR.moduleFromOperation nativeOp
        MLIR.withPassManager ctx $ \pm -> do
          MLIR.addConvertAffineToStandardPass pm
@@ -181,7 +185,8 @@ translateToMLIR toLLVM tu =
      -- MLIR.dump nativeOp
      check <- MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
-     BU.toString <$> MLIR.showOperation {-WithLocation-} nativeOp)
+     BU.toString <$> (if (dumpLoc opts) then MLIR.showOperationWithLocation
+                      else MLIR.showOperation) nativeOp)
 
 -- | Add enums
 addEnum :: Enumerator -> EnvM ()
