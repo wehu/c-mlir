@@ -333,6 +333,14 @@ transStmt (CFor init cond post body node) = underScope $ do
               (AST.Region [AST.Block condId [] (condBs ^..traverse ._Left ++ [AST.Do $ SCF.condition loc (lastId condBs) []])])
               (AST.Region [bodyBs])
   return $ initBs ++ [Left while] 
+transStmt (CWhile cond body isDoWhile node) = do
+  -- translate while to scf.while
+  bodyBs <- if isDoWhile then do
+              let (CCompound _ bs _) = body
+              join <$> mapM transBlockItem bs
+            else return []
+  forBs <- transStmt (CFor (Left Nothing) (Just cond) Nothing body node)
+  return $ bodyBs ++ forBs
 transStmt (CIf cond t (Just f) node) = do
   -- translate ifelse to scf.if
   let loc = getPos node
