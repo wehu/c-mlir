@@ -85,3 +85,13 @@ Translate a C file
 ```shell
 stack run -- test.c
 ```
+
+Translate to LLVM IR
+```shell
+stack run -- test.c -llvm
+```
+
+Dump IR with locations
+```shell
+stack run -- test.c -loc
+```
