@@ -522,6 +522,8 @@ transExpr c@(CCast t e node) = do
           | isInt srcTy && isFloat dstTy =
             [Left $ id AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc (AST.IntegerType AST.Signless (bits dstTy)) srcId
             ,Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc dstTy id]
+          | isMemref srcTy && isMemref dstTy =
+            [Left $ dstId AST.:= MemRef.cast loc dstTy srcId]
           | otherwise = unsupported (posOf c) c
     return (srcBs ++ casts ++ [Right dstId], (dstTy, dstSign))
   where isFloat ty = case ty of
@@ -537,6 +539,10 @@ transExpr c@(CCast t e node) = do
         isInt ty = case ty of
                      AST.IntegerType _ _ -> True
                      _ -> False
+        isMemref ty = case ty of
+                        AST.MemRefType{} -> True
+                        AST.UnrankedMemRefType{} -> True
+                        _ -> False
         bits ty = case ty of
                     AST.Float16Type -> 16
                     AST.Float32Type -> 32

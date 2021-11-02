@@ -1157,3 +1157,21 @@ module  {
   }
 }
       |]
+  
+    it "can translate pointer casting" $ do
+      [r|
+void foo() {
+  int *v0;
+  (int[3])v0;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xmemref<*xi32>>
+    %c0 = arith.constant 0 : index
+    %1 = memref.load %0[%c0] : memref<1xmemref<*xi32>>
+    %2 = memref.cast %1 : memref<*xi32> to memref<3xi32>
+    return
+  }
+}
+      |]
