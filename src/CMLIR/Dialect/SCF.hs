@@ -26,11 +26,34 @@ ifelse loc types cond t f = Operation
   , opAttributes = NoAttrs
   }
 
-yield :: Location -> [Type] -> [Name] -> Operation
-yield loc types args = Operation
-  { opName = "scf.yield"
+while :: Location -> [Type] -> [Name] -> Region -> Region -> Operation
+while loc types args cond body = Operation
+  { opName = "scf.while"
   , opLocation = loc
   , opResultTypes = Explicit types
+  , opOperands = args
+  , opRegions = [cond, body]
+  , opSuccessors = []
+  , opAttributes = NoAttrs
+  }
+
+condition :: Location -> Name -> [Name] -> Operation
+condition loc cond args = Operation
+  { opName = "scf.condition"
+  , opLocation = loc
+  , opResultTypes = Explicit []
+  , opOperands = cond:args
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = NoAttrs
+  }
+
+
+yield :: Location -> [Name] -> Operation
+yield loc args = Operation
+  { opName = "scf.yield"
+  , opLocation = loc
+  , opResultTypes = Explicit []
   , opOperands = args
   , opRegions = []
   , opSuccessors = []

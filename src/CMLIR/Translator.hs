@@ -266,6 +266,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                 (Just (CBinary CLeOp (CVar ident1 _) ub@(CConst _) _))
                 (Just (CAssign CAddAssOp (CVar ident2 _) step@(CConst _) _))
                 body node)
+  -- try to translate for to affine.for
   | ident0 == ident1 && ident1 == ident2 = do
   let name = identName ident0
       loc = getPos node
@@ -277,7 +278,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
     transBlock [(varName, AST.IndexType)]
       [b | isn't _Right index, (Left b) <- [index]]
       body
-      [AST.Do $ Affine.yield (getPos node) [] []]
+      [AST.Do $ Affine.yield (getPos node) []]
   let for = AST.Do $ Affine.for
                   (getPos node)
                   (fromIntegral $ fromJust $ intValue lb)
@@ -292,6 +293,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                 (Just (CBinary CLeOp (CVar ident1 _) ub _))
                 (Just (CAssign CAddAssOp (CVar ident2 _) step _))
                 body node)
+  -- try to translate for to scf.for
   | ident0 == ident1 && ident1 == ident2 = do
   let name = identName ident0
       loc = getPos node
@@ -303,7 +305,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
     transBlock [(varName, AST.IndexType)]
       [b | isn't _Right index, (Left b) <- [index]]
       body
-      [AST.Do $ SCF.yield loc [] []]
+      [AST.Do $ SCF.yield loc []]
   (lbBs, (lbTy, _)) <- transExpr lb
   (ubBs, (ubTy, _)) <- transExpr ub
   (stepBs, (stepTy, _)) <- transExpr step
@@ -312,17 +314,38 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
   (stepB, stepId) <- toIndex loc (lastId stepBs) stepTy
   let for = AST.Do $ SCF.for loc [] lbId ubId stepId [] $ AST.Region [b]
   return $ lbBs ++ ubBs ++ stepBs ++ [lbB, ubB, stepB, Left for]
+transStmt (CFor init cond post body node) = underScope $ do
+  -- try to translate for to scf.while
+  let loc = getPos node
+  initBs <- case init of
+             Left (Just e) -> (^._1) <$> transExpr e
+             Left Nothing -> return []
+             Right decl -> transBlockItem (CBlockDecl decl)
+  condBs <- case cond of
+             Just e -> (^._1) <$> transExpr e
+             Nothing -> return []
+  postBs <- case post of
+             Just e -> (^._1) <$> transExpr e
+             Nothing -> return []
+  bodyBs <- transBlock [] [] body (postBs ^..traverse._Left ++ [AST.Do $ SCF.yield loc []])
+  condId <- freshName
+  let while = AST.Do $ SCF.while loc [] []
+              (AST.Region [AST.Block condId [] (condBs ^..traverse ._Left ++ [AST.Do $ SCF.condition loc (lastId condBs) []])])
+              (AST.Region [bodyBs])
+  return $ initBs ++ [Left while] 
 transStmt (CIf cond t (Just f) node) = do
+  -- translate ifelse to scf.if
   let loc = getPos node
   (condBs, _) <- transExpr cond
-  tb <- underScope $ transBlock [] [] t [AST.Do $ SCF.yield loc [] []]
-  fb <- underScope $ transBlock [] [] f [AST.Do $ SCF.yield loc [] []]
+  tb <- underScope $ transBlock [] [] t [AST.Do $ SCF.yield loc []]
+  fb <- underScope $ transBlock [] [] f [AST.Do $ SCF.yield loc []]
   let if_ = AST.Do $ SCF.ifelse loc [] (lastId condBs) (AST.Region [tb]) (AST.Region [fb])
   return $ condBs ++ [Left if_]
 transStmt (CIf cond t Nothing node) = do
+  -- translate if to scf.if
   let loc = getPos node
   (condBs, _) <- transExpr cond
-  tb <- underScope $ transBlock [] [] t [AST.Do $ SCF.yield loc [] []]
+  tb <- underScope $ transBlock [] [] t [AST.Do $ SCF.yield loc []]
   let if_ = AST.Do $ SCF.ifelse loc [] (lastId condBs) (AST.Region [tb]) (AST.Region [])
   return $ condBs ++ [Left if_]
 transStmt e = unsupported (posOf e) e

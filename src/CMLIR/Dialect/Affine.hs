@@ -18,11 +18,11 @@ for loc lb ub step region = Operation
                    <> namedAttribute "step" (IntegerAttr (IntegerType Signless 64) step)
   }
 
-yield :: Location -> [Type] -> [Name] -> Operation
-yield loc types args = Operation
+yield :: Location -> [Name] -> Operation
+yield loc args = Operation
   { opName = "affine.yield"
   , opLocation = loc
-  , opResultTypes = Explicit types
+  , opResultTypes = Explicit [] 
   , opOperands = args
   , opRegions = []
   , opSuccessors = []

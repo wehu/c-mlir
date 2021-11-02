@@ -568,6 +568,39 @@ module  {
   }
 }
       |]
+    
+    it "can translate any for loop to scf for" $ do
+      [r|
+void foo() {
+  for (int i=0; i>2; i+=1) {
+  }
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %c0_i32 = arith.constant 0 : i32
+    %0 = memref.alloca() : memref<1xi32>
+    %c0 = arith.constant 0 : index
+    memref.store %c0_i32, %0[%c0] : memref<1xi32>
+    scf.while : () -> () {
+      %c0_0 = arith.constant 0 : index
+      %1 = memref.load %0[%c0_0] : memref<1xi32>
+      %c2_i32 = arith.constant 2 : i32
+      %2 = arith.cmpi sgt, %1, %c2_i32 : i32
+      scf.condition(%2)
+    } do {
+      %c0_0 = arith.constant 0 : index
+      %1 = memref.load %0[%c0_0] : memref<1xi32>
+      %c1_i32 = arith.constant 1 : i32
+      %2 = arith.addi %1, %c1_i32 : i32
+      %c0_1 = arith.constant 0 : index
+      memref.store %2, %0[%c0_1] : memref<1xi32>
+      scf.yield
+    }
+    return
+  }
+}
+      |]
 
     it "can translate ifelse to scf if" $ do
       [r|

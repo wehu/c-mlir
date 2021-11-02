@@ -9,7 +9,7 @@ Only a small subset of c is supported based on the current semantics of MLIR dia
 * Arithmetic operations -> Arith dialect
 * A limited version of flow control(for/if) -> Affine/SCF dialect
 
-for `for`, if possiable, try to lower to affine for, or lower to scf for
+for `for`, if possiable, try to lower to affine.for, and if not, try to lower to scf.for, elsewise scf.while
 
 ## Install
 
