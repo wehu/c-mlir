@@ -828,11 +828,13 @@ void foo() {
   long v3;
   float v4;
   double v5;
+  (float)v0;
   (float)v1;
   (float)v2;
   (float)v3;
   (float)v4;
   (float)v5;
+  (double)v0;
   (double)v1;
   (double)v2;
   (double)v3;
@@ -849,37 +851,45 @@ module  {
     %4 = memref.alloca() : memref<1xf32>
     %5 = memref.alloca() : memref<1xf64>
     %c0 = arith.constant 0 : index
-    %6 = memref.load %1[%c0] : memref<1xi16>
-    %7 = arith.sitofp %6 : i16 to f16
-    %8 = arith.extf %7 : f16 to f32
+    %6 = memref.load %0[%c0] : memref<1xi8>
+    %7 = arith.extsi %6 : i8 to i32
+    %8 = arith.sitofp %7 : i32 to f32
     %c0_0 = arith.constant 0 : index
-    %9 = memref.load %2[%c0_0] : memref<1xi32>
-    %10 = arith.sitofp %9 : i32 to f32
+    %9 = memref.load %1[%c0_0] : memref<1xi16>
+    %10 = arith.extsi %9 : i16 to i32
+    %11 = arith.sitofp %10 : i32 to f32
     %c0_1 = arith.constant 0 : index
-    %11 = memref.load %3[%c0_1] : memref<1xi64>
-    %12 = arith.sitofp %11 : i64 to f64
-    %13 = arith.truncf %12 : f64 to f32
+    %12 = memref.load %2[%c0_1] : memref<1xi32>
+    %13 = arith.sitofp %12 : i32 to f32
     %c0_2 = arith.constant 0 : index
-    %14 = memref.load %4[%c0_2] : memref<1xf32>
+    %14 = memref.load %3[%c0_2] : memref<1xi64>
+    %15 = arith.trunci %14 : i64 to i32
+    %16 = arith.sitofp %15 : i32 to f32
     %c0_3 = arith.constant 0 : index
-    %15 = memref.load %5[%c0_3] : memref<1xf64>
-    %16 = arith.truncf %15 : f64 to f32
+    %17 = memref.load %4[%c0_3] : memref<1xf32>
     %c0_4 = arith.constant 0 : index
-    %17 = memref.load %1[%c0_4] : memref<1xi16>
-    %18 = arith.sitofp %17 : i16 to f16
-    %19 = arith.extf %18 : f16 to f64
+    %18 = memref.load %5[%c0_4] : memref<1xf64>
+    %19 = arith.truncf %18 : f64 to f32
     %c0_5 = arith.constant 0 : index
-    %20 = memref.load %2[%c0_5] : memref<1xi32>
-    %21 = arith.sitofp %20 : i32 to f32
-    %22 = arith.extf %21 : f32 to f64
+    %20 = memref.load %0[%c0_5] : memref<1xi8>
+    %21 = arith.extsi %20 : i8 to i64
+    %22 = arith.sitofp %21 : i64 to f64
     %c0_6 = arith.constant 0 : index
-    %23 = memref.load %3[%c0_6] : memref<1xi64>
-    %24 = arith.sitofp %23 : i64 to f64
+    %23 = memref.load %1[%c0_6] : memref<1xi16>
+    %24 = arith.extsi %23 : i16 to i64
+    %25 = arith.sitofp %24 : i64 to f64
     %c0_7 = arith.constant 0 : index
-    %25 = memref.load %4[%c0_7] : memref<1xf32>
-    %26 = arith.extf %25 : f32 to f64
+    %26 = memref.load %2[%c0_7] : memref<1xi32>
+    %27 = arith.extsi %26 : i32 to i64
+    %28 = arith.sitofp %27 : i64 to f64
     %c0_8 = arith.constant 0 : index
-    %27 = memref.load %5[%c0_8] : memref<1xf64>
+    %29 = memref.load %3[%c0_8] : memref<1xi64>
+    %30 = arith.sitofp %29 : i64 to f64
+    %c0_9 = arith.constant 0 : index
+    %31 = memref.load %4[%c0_9] : memref<1xf32>
+    %32 = arith.extf %31 : f32 to f64
+    %c0_10 = arith.constant 0 : index
+    %33 = memref.load %5[%c0_10] : memref<1xf64>
     return
   }
 }

@@ -391,13 +391,13 @@ transExpr (CBinary bop lhs rhs node) = do
               AST.IndexType -> False
               _ -> True
       boolTy = AST.IntegerType AST.Signless 1
-      resTy | bop == CEqOp ||
-              bop == CNeqOp ||
-              bop == CLeOp ||
-              bop == CGrOp ||
-              bop == CLeqOp ||
-              bop == CGeqOp = boolTy
-            | otherwise = lhsTy    
+      (resTy, resSign) | bop == CEqOp ||
+                         bop == CNeqOp ||
+                         bop == CLeOp ||
+                         bop == CGrOp ||
+                         bop == CLeqOp ||
+                         bop == CGeqOp = (boolTy, False)
+                       | otherwise = (lhsTy, lhsSign)    
       op = id AST.:= (case bop of
                         CAddOp -> if isF then Arith.AddF else Arith.AddI
                         CSubOp -> if isF then Arith.SubF else Arith.SubI
@@ -418,7 +418,7 @@ transExpr (CBinary bop lhs rhs node) = do
                         CLeqOp -> if isF then Arith.cmpf 5 else (if lhsSign then Arith.cmpi 3 else Arith.cmpi 7)
                         CGeqOp -> if isF then Arith.cmpf 3 else (if lhsSign then Arith.cmpi 5 else Arith.cmpi 9)
                         ) loc resTy lhsId rhsId
-  return (lhsBs ++ rhsBs ++ [Left op], (resTy, lhsSign))
+  return (lhsBs ++ rhsBs ++ [Left op], (resTy, resSign))
 transExpr (CComma es _) = do
   bs <- mapM transExpr es
   let ty = last bs ^._2
@@ -469,8 +469,8 @@ transExpr c@(CCast t e node) = do
           | isInt srcTy && isFloat dstTy && bits srcTy == bits dstTy =
             [Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc (floatTy $ bits srcTy) srcId]
           | isInt srcTy && isFloat dstTy =
-            [Left $ id AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc (floatTy $ bits srcTy) srcId
-            ,Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncF else Arith.ExtF) loc dstTy id]
+            [Left $ id AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc (AST.IntegerType AST.Signless (bits dstTy)) srcId
+            ,Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc dstTy id]
           | otherwise = unsupported (posOf c) c
     return (srcBs ++ casts ++ [Right dstId], (dstTy, dstSign))
   where isFloat ty = case ty of
