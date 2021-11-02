@@ -59,7 +59,7 @@ Install stack
 curl https://get-ghcup.haskell.org -sSf | sh
 ```
 
-Install [mlir-hs](https://github.com/wehu/mlir-hs)
+Install [mlir-hs](https://github.com/wehu/mlir-hs) (forked from [mlir-hs](https://github.com/google/mlir-hs))
 
 ```shell
 git clone https://github.com/wehu/mlir-hs
@@ -81,7 +81,7 @@ Run tests
 stack test
 ```
 
-Tranlate a C file
+Translate a C file
 ```shell
 stack run -- test.c
 ```
