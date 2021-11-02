@@ -117,7 +117,9 @@ lastId bs =
     Left e -> error "unsupported"
 
 -- | Helper to create constant zero
-const0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
+constIndex0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
+
+constInt1 loc ty = Arith.Constant loc ty (AST.IntegerAttr ty 1)
 
 -- | Helper to collect an array access to memref access by indices
 collectIndices src indices =
@@ -235,7 +237,7 @@ transLocalDecl (ObjDef var init node) = do
       alloc = MemRef.alloca (getPos node) mt [] []
       b = Left $ id AST.:= alloc
       st = if isn't _Nothing initBs then
-             [Left $ id0 AST.:= const0 (getPos node)
+             [Left $ id0 AST.:= constIndex0 (getPos node)
              ,Left $ id1 AST.:= MemRef.Store (lastId $ fromJust initBs) id [id0]]
            else []
   addVar n (id, t, True)
@@ -365,7 +367,7 @@ transExpr (CVar ident node) = do
   (id, (ty, sign), isMemRef) <- lookupVar (identName ident)
   if isMemRef then do
     id0 <- freshName
-    let c = const0 (getPos node)
+    let c = constIndex0 (getPos node)
         op0 = id0 AST.:= c
     id1 <- freshName
     let ld = MemRef.Load ty id [id0]
@@ -393,7 +395,7 @@ transExpr (CAssign op lhs rhs node) = do
   let rhsId = lastId rhsBs
   if null indices then do
     id0 <- freshName
-    let c = const0 (getPos node)
+    let c = constIndex0 (getPos node)
         op0 = id0 AST.:= c
     id1 <- freshName
     let st = MemRef.Store rhsId id [id0]
@@ -533,6 +535,26 @@ transExpr (CCall (CVar ident _) args node) = do
   argsBs <- mapM transExpr args
   let call = id AST.:= Std.call (getPos node) resTy (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
   return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (resTy, sign))
+transExpr (CUnary CPreIncOp e node) = do
+  let const1 = CConst (CIntConst (cInteger 1) node)
+  (incBs, _) <- transExpr (CAssign CAddAssOp e const1 node)
+  (bs, sty) <- transExpr e
+  return (incBs ++ bs, sty)
+transExpr (CUnary CPreDecOp e node) = do
+  let const1 = CConst (CIntConst (cInteger 1) node)
+  (incBs, _) <- transExpr (CAssign CSubAssOp e const1 node)
+  (bs, sty) <- transExpr e
+  return (incBs ++ bs, sty)
+transExpr (CUnary CPostIncOp e node) = do
+  let const1 = CConst (CIntConst (cInteger 1) node)
+  (bs, sty) <- transExpr e
+  (incBs, _) <- transExpr (CAssign CAddAssOp e const1 node)
+  return (bs ++ incBs ++ [Right $ lastId bs], sty)
+transExpr (CUnary CPostDecOp e node) = do
+  let const1 = CConst (CIntConst (cInteger 1) node)
+  (bs, sty) <- transExpr e
+  (incBs, _) <- transExpr (CAssign CSubAssOp e const1 node)
+  return (bs ++ incBs ++ [Right $ lastId bs], sty)
 transExpr e = unsupported (posOf e) e
 
 -- | Translate a constant expression
