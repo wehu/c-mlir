@@ -51,6 +51,7 @@ data Env = Env {decls :: [Decl],
                 enumerators :: [Enumerator],
                 typeDefs :: [TypeDef],
                 labels :: M.Map String BU.ByteString,
+                enums :: M.Map String Integer,
                 vars :: M.Map String (BU.ByteString, SType, Bool),
                 idCounter :: Int}
 
@@ -65,6 +66,7 @@ initEnv = Env{decls = [],
               enumerators = [],
               typeDefs = [],
               labels = M.empty,
+              enums = M.empty,
               vars = M.empty,
               idCounter = 0}
 
@@ -144,17 +146,14 @@ translateToMLIR tu =
      MLIR.registerAllDialects ctx
      nativeOp <- fromAST ctx (mempty, mempty) $ do
                    let res = runTrav initEnv $ do
-                              -- first add all global function declarations
-                              modifyUserState (\s -> s{vars=M.empty, decls=[]})
-                              withExtDeclHandler (analyseAST tu) handleGDecl
+                              -- add all enums
+                              withExtDeclHandler (analyseAST tu) handlers
+                              getUserState  >>= mapM_ addEnum . enumerators
+                              -- add all global function declarations
                               getUserState  >>= mapM_ registerFunction . decls
                               -- translate all functions with definition body
-                              modifyUserState (\s -> s{funDefs=[], funsWithBody=M.empty})
-                              withExtDeclHandler (analyseAST tu) handleFDef
                               fs <- getUserState >>= mapM transFunction . funDefs
                               -- add declarations for all functions without body
-                              modifyUserState (\s -> s{decls=[]})
-                              withExtDeclHandler (analyseAST tu) handleGDecl
                               ds <- getUserState >>= mapM transGDecl . decls
                               -- generate a module
                               id <- freshName
@@ -166,6 +165,13 @@ translateToMLIR tu =
      check <- MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
      BU.toString <$> MLIR.showOperation {-WithLocation-} nativeOp)
+
+-- | Add enums
+addEnum :: Enumerator -> EnvM ()
+addEnum (Enumerator ident e _ node) = do
+  let name = identName ident
+      v = fromJust $ intValue e
+  modifyUserState (\s -> s{enums=M.insert name v (enums s)})
 
 -- | Translate global declaration
 transGDecl :: Decl -> EnvM [AST.Binding]
@@ -669,34 +675,18 @@ transStr s@(CString str _) loc = error $ "unsupported for string " ++ str
 ------------------------------------------------------------------------------
 -- AST Handlers
 
-handleTag :: DeclEvent -> EnvM ()
-handleTag (TagEvent (CompDef compT)) = return ()
-handleTag (TagEvent (EnumDef enumT)) = return ()
-handleTag _ = return ()
-
-handleGDecl :: DeclEvent -> EnvM ()
-handleGDecl (DeclEvent (Declaration decl)) = modifyUserState (\s -> s{decls=decls s ++ [decl]})
-handleGDecl _ = return ()
-
-handleFDef :: DeclEvent -> EnvM ()
-handleFDef (DeclEvent (FunctionDef funDef)) = modifyUserState (\s -> s{funDefs=funDefs s ++ [funDef]})
-handleFDef _ = return ()
+handlers :: DeclEvent -> EnvM ()
+handlers (TagEvent (CompDef compT)) = return ()
+handlers (TagEvent (EnumDef (EnumType _ es _ node))) = modifyUserState (\s -> s{enumerators=enumerators s ++ es})
+handlers (DeclEvent (Declaration decl)) = modifyUserState (\s -> s{decls=decls s ++ [decl]})
+handlers (DeclEvent (FunctionDef funDef)) = modifyUserState (\s -> s{funDefs=funDefs s ++ [funDef]})
+handlers (TypeDefEvent typeDef) = modifyUserState (\s -> s{typeDefs=typeDefs s ++ [typeDef]})
+handlers (AsmEvent (CStrLit c n)) = return ()
+handlers _ = return ()
 
 handleLDecl :: DeclEvent -> EnvM ()
 handleLDecl (LocalEvent (ObjectDef objDef)) = modifyUserState (\s -> s{objDefs=objDefs s ++ [objDef]})
 handleLDecl _ = return ()
-
-handleParam :: DeclEvent -> EnvM ()
-handleParam (ParamEvent p) = return ()
-handleParam _ = return ()
-
-handleTypeDecl :: DeclEvent -> EnvM ()
-handleTypeDecl (TypeDefEvent typeDef) = modifyUserState (\s -> s{typeDefs=typeDefs s ++ [typeDef]})
-handleTypeDecl _ = return ()
-
-handleAsm :: DeclEvent -> EnvM ()
-handleAsm (AsmEvent (CStrLit c n)) = return ()
-handleAsm _ = return ()
 
 identName :: Ident -> String
 identName (Ident ident _ _) = ident
