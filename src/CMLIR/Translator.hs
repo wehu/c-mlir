@@ -405,10 +405,21 @@ transExpr (CAssign op lhs rhs node) = do
     toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
     let (dstTy, sign) = case ty of
                   (AST.MemRefType _ ty _ _, sign) -> (ty, sign)
+                  (AST.UnrankedMemRefType ty _, sign) -> (ty, sign)
                   _ -> unsupported (posOf src) src
-    let st = AST.Do $ MemRef.Store rhsId id (toIndices ^.. traverse . _2)
+    
+    id0 <- freshName
+    id1 <- freshName
+    id2 <- freshName
+    let st = case ty of
+               (ty@AST.UnrankedMemRefType{}, _) ->
+                 [Left $ id0 AST.:= constIndex0 (getPos node)
+                 ,Left $ id1 AST.:= MemRef.Load ty id [id0] 
+                 ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing Nothing) id1
+                 ,Left $ AST.Do $ MemRef.Store rhsId id2 (toIndices ^.. traverse . _2)]
+               _ -> [Left $ AST.Do $ MemRef.Store rhsId id (toIndices ^.. traverse . _2)]
     return (srcBs ++ rhsBs ++ join (indexBs ^.. traverse . _1) ++
-            toIndices ^.. traverse . _1 ++ [Left st], (dstTy, sign))
+            toIndices ^.. traverse . _1 ++ st, (dstTy, sign))
 transExpr (CBinary bop lhs rhs node) = do
   (lhsBs, (lhsTy, lhsSign)) <- transExpr lhs
   (rhsBs, (rhsTy, rhsSign)) <- transExpr rhs
@@ -472,11 +483,21 @@ transExpr (CIndex e index node) = do
   toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
   let ty = case srcTy of
              AST.MemRefType _ ty _ _ -> ty
+             AST.UnrankedMemRefType ty _ -> ty
              _ -> unsupported (posOf src) src
   id <- freshName
-  let ld = id AST.:= MemRef.Load ty srcId (toIndices ^.. traverse . _2)
+  id0 <- freshName
+  id1 <- freshName
+  id2 <- freshName
+  let ld = case srcTy of
+             AST.UnrankedMemRefType ty _ ->
+               [Left $ id0 AST.:= constIndex0 (getPos node)
+               ,Left $ id1 AST.:= MemRef.Load srcTy srcId [id0] 
+               ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing Nothing) id1
+               ,Left $ id AST.:= MemRef.Load ty id2 (toIndices ^.. traverse . _2)]
+             _ -> [Left $ id AST.:= MemRef.Load ty srcId (toIndices ^.. traverse . _2)]
   return (srcBs ++ join (indexBs ^.. traverse . _1) ++
-          toIndices ^.. traverse . _1 ++ [Left ld, Right id], (ty, sign))
+          toIndices ^.. traverse . _1 ++ ld ++ [Right id], (ty, sign))
 transExpr c@(CCast t e node) = do
   (srcBs, (srcTy, srcSign)) <- transExpr e
   (dstTy, dstSign) <- type_ (posOf node) <$> analyseTypeDecl t

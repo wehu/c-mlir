@@ -1130,3 +1130,30 @@ module  {
   }
 }
       |]
+
+    it "can translate pointer index access" $ do
+      [r|
+void foo() {
+  int *v0;
+  v0[0] = v0[1];
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xmemref<*xi32>>
+    %c1_i32 = arith.constant 1 : i32
+    %1 = arith.index_cast %c1_i32 : i32 to index
+    %c0 = arith.constant 0 : index
+    %2 = memref.load %0[%c0] : memref<1xmemref<*xi32>>
+    %3 = memref.cast %2 : memref<*xi32> to memref<?xi32>
+    %4 = memref.load %3[%1] : memref<?xi32>
+    %c0_i32 = arith.constant 0 : i32
+    %5 = arith.index_cast %c0_i32 : i32 to index
+    %c0_0 = arith.constant 0 : index
+    %6 = memref.load %0[%c0_0] : memref<1xmemref<*xi32>>
+    %7 = memref.cast %6 : memref<*xi32> to memref<?xi32>
+    memref.store %4, %7[%5] : memref<?xi32>
+    return
+  }
+}
+      |]
