@@ -3,11 +3,13 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ParallelListComp #-}
+{-# LANGUAGE TypeApplications #-}
 module CMLIR.Translator where
 
 import qualified MLIR.AST.Builder as AST
 import qualified MLIR.AST as AST
 import qualified MLIR.Native.Pass as MLIR
+import qualified MLIR.Native.ExecutionEngine as MLIR
 import MLIR.AST.Serialize
 import qualified Data.ByteString.UTF8 as BU
 import qualified MLIR.AST.Dialect.Arith as Arith
@@ -142,9 +144,9 @@ fromIndex loc i dstTy =
   if dstTy == AST.IndexType then return (Right i, i)
   else (\id -> (Left $ id AST.:= Arith.IndexCast loc dstTy i, id)) <$> freshName
 
-data Options = Options {toLLVM :: Bool, dumpLoc :: Bool}
+data Options = Options {toLLVM :: Bool, dumpLoc :: Bool, jit :: Bool}
 
-defaultOptions = Options {toLLVM = False, dumpLoc = False}
+defaultOptions = Options {toLLVM = False, dumpLoc = False, jit = False}
 
 -- | Translate c AST to MLIR
 translateToMLIR :: Options -> CTranslUnit -> IO String
@@ -185,8 +187,18 @@ translateToMLIR opts tu =
      -- MLIR.dump nativeOp
      check <- MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
-     BU.toString <$> (if (dumpLoc opts) then MLIR.showOperationWithLocation
-                      else MLIR.showOperation) nativeOp)
+     if jit opts then do
+       Just m <- MLIR.moduleFromOperation nativeOp
+       MLIR.withExecutionEngine m $ \(Just eng) -> do
+         MLIR.withStringRef "main" $ \name -> do
+           MLIR.executionEngineInvoke @() eng name []
+       return ""
+     else  
+       BU.toString <$> (if (dumpLoc opts) then MLIR.showOperationWithLocation
+                        else MLIR.showOperation) nativeOp)
+
+emitted :: AST.Operation -> AST.Operation
+emitted op = op { AST.opAttributes = AST.opAttributes op <> AST.namedAttribute "llvm.emit_c_interface" AST.UnitAttr }
 
 -- | Add enums
 addEnum :: Enumerator -> EnvM ()
@@ -229,7 +241,7 @@ transFunction f@(FunDef var stmt node) = do
   underScope $ do
     mapM_ (uncurry addVar) [(a ^._1, (BU.fromString $ a ^._1, a^._2, False)) | a <- params (posOf node) var]
     b <- transBlock args [] stmt []
-    let f = AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
+    let f = emitted $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
     isKernel <- M.lookup name . kernels <$> getUserState
     let f' = if isKernel ^.non False then
                f{AST.opAttributes = AST.opAttributes f <> AST.namedAttribute "cl.kernel" (AST.BoolAttr True)}
