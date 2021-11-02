@@ -229,7 +229,6 @@ transLocalDecl :: ObjDef -> EnvM [BindingOrName]
 transLocalDecl (ObjDef var init node) = do
   id <- freshName
   id0 <- freshName
-  id1 <- freshName
   initBs <- mapM transInit init
   let (n, t) = varDecl (posOf node) var
       mt = case t of
@@ -239,7 +238,7 @@ transLocalDecl (ObjDef var init node) = do
       b = Left $ id AST.:= alloc
       st = if isn't _Nothing initBs then
              [Left $ id0 AST.:= constIndex0 (getPos node)
-             ,Left $ id1 AST.:= MemRef.Store (lastId $ fromJust initBs) id [id0]]
+             ,Left $ AST.Do $ MemRef.Store (lastId $ fromJust initBs) id [id0]]
            else []
   addVar n (id, t, True)
   return $ fromMaybe [] initBs ++ [b] ++ st
@@ -398,10 +397,9 @@ transExpr (CAssign op lhs rhs node) = do
     id0 <- freshName
     let c = constIndex0 (getPos node)
         op0 = id0 AST.:= c
-    id1 <- freshName
     let st = MemRef.Store rhsId id [id0]
-        op1 = id1 AST.:= st
-    return (rhsBs ++ [Left op0, Left op1, Right id1], ty)
+        op1 = AST.Do st
+    return (rhsBs ++ [Left op0, Left op1], ty)
   else do
     indexBs <- mapM transExpr indices
     let indexIds = map lastId (indexBs ^.. traverse . _1)
@@ -409,10 +407,9 @@ transExpr (CAssign op lhs rhs node) = do
     let (dstTy, sign) = case ty of
                   (AST.MemRefType _ ty _ _, sign) -> (ty, sign)
                   _ -> unsupported (posOf src) src
-    stId <- freshName
-    let st = id AST.:= MemRef.Store rhsId id (toIndices ^.. traverse . _2)
+    let st = AST.Do $ MemRef.Store rhsId id (toIndices ^.. traverse . _2)
     return (rhsBs ++ join (indexBs ^.. traverse . _1) ++
-            toIndices ^.. traverse . _1 ++ [Left st, Right stId], (dstTy, sign))
+            toIndices ^.. traverse . _1 ++ [Left st], (dstTy, sign))
 transExpr (CBinary bop lhs rhs node) = do
   (lhsBs, (lhsTy, lhsSign)) <- transExpr lhs
   (rhsBs, (rhsTy, rhsSign)) <- transExpr rhs
