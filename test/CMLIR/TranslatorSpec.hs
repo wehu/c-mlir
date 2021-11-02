@@ -1175,3 +1175,29 @@ module  {
   }
 }
       |]
+    
+    it "can translate enum" $ do
+      [r|
+enum test {
+  A,
+  B
+};
+
+void foo() {
+  int v0 = A;
+  v0 = B;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %c0_i32 = arith.constant 0 : i32
+    %0 = memref.alloca() : memref<1xi32>
+    %c0 = arith.constant 0 : index
+    memref.store %c0_i32, %0[%c0] : memref<1xi32>
+    %c1_i32 = arith.constant 1 : i32
+    %c0_0 = arith.constant 0 : index
+    memref.store %c1_i32, %0[%c0_0] : memref<1xi32>
+    return
+  }
+}
+      |]

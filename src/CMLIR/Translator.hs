@@ -146,8 +146,9 @@ translateToMLIR tu =
      MLIR.registerAllDialects ctx
      nativeOp <- fromAST ctx (mempty, mempty) $ do
                    let res = runTrav initEnv $ do
-                              -- add all enums
+                              -- analyze globals
                               withExtDeclHandler (analyseAST tu) handlers
+                              -- add all enums
                               getUserState  >>= mapM_ addEnum . enumerators
                               -- add all global function declarations
                               getUserState  >>= mapM_ registerFunction . decls
@@ -370,16 +371,24 @@ transStmt e = unsupported (posOf e) e
 transExpr :: CExpression NodeInfo -> EnvM ([BindingOrName], SType)
 transExpr (CConst c) = transConst c
 transExpr (CVar ident node) = do
-  (id, (ty, sign), isLocal) <- lookupVar (identName ident)
-  if isLocal then do
-    id0 <- freshName
-    let c = constIndex0 (getPos node)
-        op0 = id0 AST.:= c
-    id1 <- freshName
-    let ld = MemRef.Load ty id [id0]
-        op1 = id1 AST.:= ld
-    return ([Left op0, Left op1, Right id1], (ty, sign))
-  else return ([Right id], (ty, sign))
+  let name = identName ident
+  enum <- M.lookup name . enums <$> getUserState
+  case enum of
+    Just enum -> do
+      id <- freshName
+      let ty = AST.IntegerType AST.Signless 32
+      return ([Left $ id AST.:= constInt (getPos node) ty (fromInteger enum), Right id], (ty, True))
+    Nothing -> do
+      (id, (ty, sign), isLocal) <- lookupVar name
+      if isLocal then do
+        id0 <- freshName
+        let c = constIndex0 (getPos node)
+            op0 = id0 AST.:= c
+        id1 <- freshName
+        let ld = MemRef.Load ty id [id0]
+            op1 = id1 AST.:= ld
+        return ([Left op0, Left op1, Right id1], (ty, sign))
+      else return ([Right id], (ty, sign))
 transExpr (CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
   (id, ty, srcBs) <- case src of
