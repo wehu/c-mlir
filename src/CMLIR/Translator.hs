@@ -431,13 +431,13 @@ transExpr (CAssign op lhs rhs node) = do
     id1 <- freshName
     id2 <- freshName
     let st = case ty of
-               (ty@AST.UnrankedMemRefType{}, _) ->
+               (ty@(AST.UnrankedMemRefType _ ms), _) ->
                  if isLocal
                  then [Left $ id0 AST.:= constIndex0 (getPos node)
                       ,Left $ id1 AST.:= MemRef.Load ty id [id0]
-                      ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing Nothing) id1
+                      ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing (Just ms)) id1
                       ,Left $ AST.Do $ MemRef.Store rhsId id2 (toIndices ^.. traverse . _2)]
-                 else [Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing Nothing) id
+                 else [Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing (Just ms)) id
                       ,Left $ AST.Do $ MemRef.Store rhsId id2 (toIndices ^.. traverse . _2)]
                _ -> [Left $ AST.Do $ MemRef.Store rhsId id (toIndices ^.. traverse . _2)]
     return (srcBs ++ rhsBs ++ join (indexBs ^.. traverse . _1) ++
@@ -512,20 +512,20 @@ transExpr (CIndex e index node) = do
   id1 <- freshName
   id2 <- freshName
   let ld = case srcTy of
-             AST.UnrankedMemRefType ty _ ->
+             AST.UnrankedMemRefType ty ms ->
                if isLocal
                then [Left $ id0 AST.:= constIndex0 (getPos node)
                     ,Left $ id1 AST.:= MemRef.Load srcTy srcId [id0]
-                    ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing Nothing) id1
+                    ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing (Just ms)) id1
                     ,Left $ id AST.:= MemRef.Load ty id2 (toIndices ^.. traverse . _2)]
-               else [Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing Nothing) srcId
+               else [Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing (Just ms)) srcId
                     ,Left $ id AST.:= MemRef.Load ty id2 (toIndices ^.. traverse . _2)]
              _ -> [Left $ id AST.:= MemRef.Load ty srcId (toIndices ^.. traverse . _2)]
   return (srcBs ++ join (indexBs ^.. traverse . _1) ++
           toIndices ^.. traverse . _1 ++ ld ++ [Right id], (ty, sign))
 transExpr c@(CCast t e node) = do
   (srcBs, (srcTy, srcSign)) <- transExpr e
-  (dstTy, dstSign) <- type_ (posOf node) <$> analyseTypeDecl t
+  (dstTy, dstSign) <- type_ (posOf node) 0 <$> analyseTypeDecl t
   if srcTy == dstTy then return (srcBs, (srcTy, srcSign))
   else do
     dstId <- freshName
@@ -635,11 +635,11 @@ transExpr (CUnary CIndOp e node) = do
   id0 <- freshName
   id1 <- freshName
   let loc = getPos node
-      resTy = case eTy of
-                AST.UnrankedMemRefType t _ -> t
+      (resTy, ms) = case eTy of
+                AST.UnrankedMemRefType t ms -> (t, ms)
                 _ -> unsupported (posOf node) e
       bs = [Left $ id0 AST.:= constIndex0 loc
-           ,Left $ id1 AST.:= MemRef.cast loc (AST.MemRefType [Nothing] resTy Nothing Nothing) (lastId eBs)
+           ,Left $ id1 AST.:= MemRef.cast loc (AST.MemRefType [Nothing] resTy Nothing (Just ms)) (lastId eBs)
            ,Left $ id AST.:= MemRef.Load resTy id1 [id0]]
   return (eBs ++ bs ++ [Right id], (resTy, eSign))
 transExpr e = unsupported (posOf e) e
@@ -714,13 +714,13 @@ varName :: VarName -> String
 varName (VarName ident _) = identName ident
 varName NoName = ""
 
-type_ :: Position -> Type -> SType
-type_ pos (FunctionType ty attrs) = f ty
+type_ :: Position -> Int -> Type -> SType
+type_ pos ms (FunctionType ty attrs) = f ty
   where f (FunType resType argTypes _) =
             (AST.FunctionType (map (\t -> paramDecl pos t ^. _2 . _1) argTypes)
-                              ([t | t <- map (\t -> type_ pos t ^._1) [resType], t /= AST.NoneType]), type_ pos resType ^. _2)
-        f (FunTypeIncomplete ty) = type_ pos ty
-type_ pos ty@(DirectType name quals attrs) =
+                              ([t | t <- map (\t -> type_ pos ms t ^._1) [resType], t /= AST.NoneType]), type_ pos ms resType ^. _2)
+        f (FunTypeIncomplete ty) = type_ pos ms ty
+type_ pos ms ty@(DirectType name quals attrs) =
   case name of
     TyVoid -> (AST.NoneType, False)
     TyIntegral (id -> TyBool) -> (AST.IntegerType AST.Signless 1, False)
@@ -741,21 +741,22 @@ type_ pos ty@(DirectType name quals attrs) =
     TyFloating (id -> TyDouble) -> (AST.Float64Type, True)
     TyFloating (id -> TyLDouble) -> (AST.Float64Type, True)
     TyFloating (id -> TyFloatN n _) -> unsupported pos ty
-    TyComplex t -> let (ct, sign) = type_ pos (DirectType (TyFloating t) quals attrs)
+    TyComplex t -> let (ct, sign) = type_ pos ms (DirectType (TyFloating t) quals attrs)
                     in (AST.ComplexType ct, sign)
     TyComp ref -> unsupported pos ty
     TyEnum ref -> (AST.IntegerType AST.Signless 32, True)
     TyBuiltin _ -> unsupported pos ty
     _ -> unsupported pos ty
-type_ pos ty@(PtrType t quals attrs) =
-  let (tt, sign) = type_ pos t
-   in (AST.UnrankedMemRefType tt (AST.IntegerAttr (AST.IntegerType AST.Signless 64) 0), sign)
-type_ pos (ArrayType t size quals attrs) =
+type_ pos ms ty@(PtrType t quals attrs) =
+  let (tt, sign) = type_ pos ms t
+   in (AST.UnrankedMemRefType tt (AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms), sign)
+type_ pos ms (ArrayType t size quals attrs) =
   let s = arraySize size
-   in case type_ pos t of
-        (AST.MemRefType sizes t Nothing Nothing, sign) -> (AST.MemRefType (s:sizes) t Nothing Nothing, sign)
-        (t, sign) -> (AST.MemRefType [s] t Nothing Nothing, sign)
-type_ pos (TypeDefType (TypeDefRef ident t _) quals attrs) = type_ pos t
+      msAttr = AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms
+   in case type_ pos ms t of
+        (AST.MemRefType sizes t Nothing ms, sign) -> (AST.MemRefType (s:sizes) t Nothing ms, sign)
+        (t, sign) -> (AST.MemRefType [s] t Nothing (Just msAttr), sign)
+type_ pos ms (TypeDefType (TypeDefRef ident t _) quals attrs) = type_ pos ms t
 
 arraySize :: ArraySize -> Maybe Int
 arraySize (UnknownArraySize static) =
@@ -770,7 +771,7 @@ paramDecl pos (ParamDecl var _) = varDecl pos var
 paramDecl pos (AbstractParamDecl var _) = varDecl pos var
 
 varDecl :: Position -> VarDecl -> (String, SType)
-varDecl pos (VarDecl name attrs ty) = (varName name, type_ pos ty)
+varDecl pos v@(VarDecl name attrs ty) = (varName name, type_ pos (memorySpace v) ty)
 
 params :: Position -> VarDecl -> [(String, SType)]
 params pos (VarDecl name attr ty) = f ty
@@ -778,6 +779,14 @@ params pos (VarDecl name attr ty) = f ty
         f _ = unsupported pos ty
         ps (FunType resType argTypes _) = map (paramDecl pos) argTypes
         ps (FunTypeIncomplete ty) = unsupported pos ty
+
+memorySpace :: VarDecl -> Int
+memorySpace var = 
+  let storage = declStorage var
+   in case storage of
+        (Static NoLinkage True) -> 1
+        (Static NoLinkage False) -> 2
+        _ -> 0
 
 getPos :: NodeInfo -> AST.Location
 getPos n =
