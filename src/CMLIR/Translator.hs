@@ -185,7 +185,7 @@ transGDecl decl@(Decl var node) = do
 registerFunction :: Decl -> EnvM ()
 registerFunction f@(Decl var node) = do
   let (name, (ty, sign)) = varDecl (posOf node) var
-  addVar name (BU.fromString name, (ty, sign), True)
+  addVar name (BU.fromString name, (ty, sign), False)
 
 -- | Translate a function to mlir AST
 transFunction :: FunDef -> EnvM AST.Binding
@@ -365,8 +365,8 @@ transStmt e = unsupported (posOf e) e
 transExpr :: CExpression NodeInfo -> EnvM ([BindingOrName], SType)
 transExpr (CConst c) = transConst c
 transExpr (CVar ident node) = do
-  (id, (ty, sign), isMemRef) <- lookupVar (identName ident)
-  if isMemRef then do
+  (id, (ty, sign), isLocal) <- lookupVar (identName ident)
+  if isLocal then do
     id0 <- freshName
     let c = constIndex0 (getPos node)
         op0 = id0 AST.:= c
@@ -380,7 +380,7 @@ transExpr (CAssign op lhs rhs node) = do
   let name = case src of
                CVar ident _ -> identName ident
                _ -> unsupported (posOf src) src
-  (id, ty, isMemRef) <- lookupVar name
+  (id, ty, isLocal) <- lookupVar name
   (rhsBs, rhsTy) <- transExpr (case op of
                       CAssignOp -> rhs
                       CMulAssOp -> CBinary CMulOp lhs rhs node
@@ -470,7 +470,7 @@ transExpr (CIndex e index node) = do
   let name = case src of
                CVar ident _ -> identName ident
                _ -> unsupported (posOf src) src
-  (srcId, (srcTy, sign), isMemRef) <- lookupVar name
+  (srcId, (srcTy, sign), isLocal) <- lookupVar name
   indexBs <- mapM transExpr indices
   let indexIds = map lastId (indexBs ^.. traverse . _1)
   toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
