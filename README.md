@@ -13,6 +13,8 @@ for `for`, if possiable, try to lower to affine.for, and if not, try to lower to
 
 pointer is translated as unranked memref.
 
+dynamic sizes array, break, continue, goto, & and switch/case are not supported.
+
 ## Install
 
 Install stack
