@@ -1084,3 +1084,27 @@ module  {
   }
 }
       |]
+    
+    it "can translate not" $ do
+      [r|
+void foo() {
+  int v0;
+  ! (v0 == v0);
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xi32>
+    %c0 = arith.constant 0 : index
+    %1 = memref.load %0[%c0] : memref<1xi32>
+    %c0_0 = arith.constant 0 : index
+    %2 = memref.load %0[%c0_0] : memref<1xi32>
+    %3 = arith.cmpi eq, %1, %2 : i32
+    %false = arith.constant false
+    %true = arith.constant true
+    %4 = arith.subi %false, %true : i1
+    %5 = arith.xori %4, %3 : i1
+    return
+  }
+}
+      |]

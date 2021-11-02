@@ -568,6 +568,19 @@ transExpr (CUnary CMinOp e node) = do
             ,Left $ id AST.:= Arith.SubI loc eTy id1 (lastId eBs)]
           _ -> [Left $ id AST.:= Arith.NegF (getPos node) eTy (lastId eBs)]
   return (eBs ++ minus ++ [Right id], (eTy, eSign))
+transExpr (CUnary CNegOp e node) = do
+  let loc = getPos node
+  (eBs, (eTy, eSign)) <- transExpr e
+  id <- freshName
+  id0 <- freshName
+  id1 <- freshName
+  id2 <- freshName
+  let bs = [Left $ id0 AST.:= constInt loc eTy 0
+            ,Left $ id1 AST.:= constInt loc eTy 1
+            ,Left $ id2 AST.:= Arith.SubI loc eTy id0 id1
+            ,Left $ id AST.:= Arith.XOrI loc eTy id2 (lastId eBs)]
+  return (eBs ++ bs ++ [Right id], (eTy, eSign))
+
 transExpr e = unsupported (posOf e) e
 
 -- | Translate a constant expression
