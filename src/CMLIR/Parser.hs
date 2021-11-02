@@ -16,7 +16,7 @@ analyse tu =
     Left errs -> Left $ join $ map show errs
     Right (_,errs) -> Right tu
   where body tu =
-          do modifyOptions (\opts -> opts {language = C99})
+          do modifyOptions (\opts -> opts {language = GNU99})
              analyseAST tu
 
 processFile :: [String] -> FilePath -> IO CTranslUnit 

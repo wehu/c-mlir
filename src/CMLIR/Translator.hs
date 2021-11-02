@@ -234,6 +234,10 @@ transBlockItem s = unsupported (posOf s) s
 -- | Translate a local variable declaration
 transLocalDecl :: ObjDef -> EnvM [BindingOrName]
 transLocalDecl (ObjDef var init node) = do
+  let storage = declStorage var
+  case storage of
+    Static{} -> error $ "static is not supported" ++ show (posOf node)
+    _ -> return ()
   id <- freshName
   id0 <- freshName
   initBs <- mapM transInit init
@@ -341,7 +345,7 @@ transStmt (CFor init cond post body node) = underScope $ do
   let while = AST.Do $ SCF.while loc [] []
               (AST.Region [AST.Block condId [] (condBs ^..traverse ._Left ++ [AST.Do $ SCF.condition loc (lastId condBs) []])])
               (AST.Region [bodyBs])
-  return $ initBs ++ [Left while] 
+  return $ initBs ++ [Left while]
 transStmt (CWhile cond body isDoWhile node) = do
   -- translate while to scf.while
   bodyBs <- if isDoWhile then do
@@ -422,15 +426,15 @@ transExpr (CAssign op lhs rhs node) = do
                   (AST.MemRefType _ ty _ _, sign) -> (ty, sign)
                   (AST.UnrankedMemRefType ty _, sign) -> (ty, sign)
                   _ -> unsupported (posOf src) src
-    
+
     id0 <- freshName
     id1 <- freshName
     id2 <- freshName
     let st = case ty of
                (ty@AST.UnrankedMemRefType{}, _) ->
-                 if isLocal 
+                 if isLocal
                  then [Left $ id0 AST.:= constIndex0 (getPos node)
-                      ,Left $ id1 AST.:= MemRef.Load ty id [id0] 
+                      ,Left $ id1 AST.:= MemRef.Load ty id [id0]
                       ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing Nothing) id1
                       ,Left $ AST.Do $ MemRef.Store rhsId id2 (toIndices ^.. traverse . _2)]
                  else [Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing Nothing) id
@@ -456,7 +460,7 @@ transExpr (CBinary bop lhs rhs node) = do
                          bop == CGrOp ||
                          bop == CLeqOp ||
                          bop == CGeqOp = (boolTy, False)
-                       | otherwise = (lhsTy, lhsSign)    
+                       | otherwise = (lhsTy, lhsSign)
       op = id AST.:= (case bop of
                         CAddOp -> if isF then Arith.AddF else Arith.AddI
                         CSubOp -> if isF then Arith.SubF else Arith.SubI
@@ -511,7 +515,7 @@ transExpr (CIndex e index node) = do
              AST.UnrankedMemRefType ty _ ->
                if isLocal
                then [Left $ id0 AST.:= constIndex0 (getPos node)
-                    ,Left $ id1 AST.:= MemRef.Load srcTy srcId [id0] 
+                    ,Left $ id1 AST.:= MemRef.Load srcTy srcId [id0]
                     ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing Nothing) id1
                     ,Left $ id AST.:= MemRef.Load ty id2 (toIndices ^.. traverse . _2)]
                else [Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing Nothing) srcId
@@ -608,7 +612,7 @@ transExpr (CUnary CMinOp e node) = do
   id1 <- freshName
   let minus =
          case eTy of
-          AST.IntegerType _ _ -> 
+          AST.IntegerType _ _ ->
             [Left $ id1 AST.:= constInt loc eTy 0
             ,Left $ id AST.:= Arith.SubI loc eTy id1 (lastId eBs)]
           _ -> [Left $ id AST.:= Arith.NegF (getPos node) eTy (lastId eBs)]
@@ -743,7 +747,7 @@ type_ pos ty@(DirectType name quals attrs) =
     TyEnum ref -> (AST.IntegerType AST.Signless 32, True)
     TyBuiltin _ -> unsupported pos ty
     _ -> unsupported pos ty
-type_ pos ty@(PtrType t quals attrs) = 
+type_ pos ty@(PtrType t quals attrs) =
   let (tt, sign) = type_ pos t
    in (AST.UnrankedMemRefType tt (AST.IntegerAttr (AST.IntegerType AST.Signless 64) 0), sign)
 type_ pos (ArrayType t size quals attrs) =
