@@ -119,7 +119,7 @@ lastId bs =
 -- | Helper to create constant zero
 constIndex0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
 
-constInt1 loc ty = Arith.Constant loc ty (AST.IntegerAttr ty 1)
+constInt loc ty val = Arith.Constant loc ty (AST.IntegerAttr ty val)
 
 -- | Helper to collect an array access to memref access by indices
 collectIndices src indices =
@@ -555,6 +555,19 @@ transExpr (CUnary CPostDecOp e node) = do
   (bs, sty) <- transExpr e
   (incBs, _) <- transExpr (CAssign CSubAssOp e const1 node)
   return (bs ++ incBs ++ [Right $ lastId bs], sty)
+transExpr (CUnary CPlusOp e node) = transExpr e
+transExpr (CUnary CMinOp e node) = do
+  let loc = getPos node
+  (eBs, (eTy, eSign)) <- transExpr e
+  id <- freshName
+  id1 <- freshName
+  let minus =
+         case eTy of
+          AST.IntegerType _ _ -> 
+            [Left $ id1 AST.:= constInt loc eTy 0
+            ,Left $ id AST.:= Arith.SubI loc eTy id1 (lastId eBs)]
+          _ -> [Left $ id AST.:= Arith.NegF (getPos node) eTy (lastId eBs)]
+  return (eBs ++ minus ++ [Right id], (eTy, eSign))
 transExpr e = unsupported (posOf e) e
 
 -- | Translate a constant expression

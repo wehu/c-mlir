@@ -1004,7 +1004,7 @@ module  {
 }
       |]
 
-    it "can translate cast to float" $ do
+    it "can translate post/pre/inc/dec" $ do
       [r|
 void foo() {
   int v0;
@@ -1049,6 +1049,37 @@ module  {
     %12 = arith.subi %11, %c1_i32_12 : i32
     %c0_13 = arith.constant 0 : index
     memref.store %12, %0[%c0_13] : memref<1xi32>
+    return
+  }
+}
+      |]
+    
+    it "can translate plus/minus" $ do
+      [r|
+void foo() {
+  int v0;
+  +v0;
+  -v0;
+  float v1;
+  +v1;
+  -v1;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xi32>
+    %c0 = arith.constant 0 : index
+    %1 = memref.load %0[%c0] : memref<1xi32>
+    %c0_0 = arith.constant 0 : index
+    %2 = memref.load %0[%c0_0] : memref<1xi32>
+    %c0_i32 = arith.constant 0 : i32
+    %3 = arith.subi %c0_i32, %2 : i32
+    %4 = memref.alloca() : memref<1xf32>
+    %c0_1 = arith.constant 0 : index
+    %5 = memref.load %4[%c0_1] : memref<1xf32>
+    %c0_2 = arith.constant 0 : index
+    %6 = memref.load %4[%c0_2] : memref<1xf32>
+    %7 = arith.negf %6 : f32
     return
   }
 }
