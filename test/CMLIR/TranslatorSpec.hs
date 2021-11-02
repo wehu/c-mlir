@@ -1241,7 +1241,6 @@ __kernel void foo(__global float* input, __local float *a) {
     a[i] = input[i];
   }
 }
-
       |] `shouldBeTranslatedAs` [r|
 module  {
   func @foo(%arg0: memref<*xf32, 2>, %arg1: memref<*xf32, 1>) attributes {cl.kernel = true} {
