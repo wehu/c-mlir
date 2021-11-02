@@ -734,7 +734,7 @@ type_ pos ty@(DirectType name quals attrs) =
     TyComplex t -> let (ct, sign) = type_ pos (DirectType (TyFloating t) quals attrs)
                     in (AST.ComplexType ct, sign)
     TyComp ref -> unsupported pos ty
-    TyEnum ref -> unsupported pos ty
+    TyEnum ref -> (AST.IntegerType AST.Signless 32, True)
     TyBuiltin _ -> unsupported pos ty
     _ -> unsupported pos ty
 type_ pos ty@(PtrType t quals attrs) = 

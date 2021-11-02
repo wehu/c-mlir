@@ -1183,13 +1183,13 @@ enum test {
   B
 };
 
-void foo() {
+void foo(enum test a) {
   int v0 = A;
   v0 = B;
 }
       |] `shouldBeTranslatedAs` [r|
 module  {
-  func @foo() {
+  func @foo(%arg0: i32) {
     %c0_i32 = arith.constant 0 : i32
     %0 = memref.alloca() : memref<1xi32>
     %c0 = arith.constant 0 : index
