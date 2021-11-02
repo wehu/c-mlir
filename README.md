@@ -1,6 +1,6 @@
 # c-mlir
 
-A translator from c to MLIR
+## A translator from c to MLIR
 
 Only a subset of c is supported based on the current semantics of MLIR dialects.
 

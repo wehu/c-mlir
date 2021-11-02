@@ -53,6 +53,7 @@ data Env = Env {decls :: [Decl],
                 labels :: M.Map String BU.ByteString,
                 enums :: M.Map String Integer,
                 vars :: M.Map String (BU.ByteString, SType, Bool),
+                kernels :: M.Map String Bool,
                 idCounter :: Int}
 
 type EnvM = TravT Env Identity
@@ -68,6 +69,7 @@ initEnv = Env{decls = [],
               labels = M.empty,
               enums = M.empty,
               vars = M.empty,
+              kernels = M.empty,
               idCounter = 0}
 
 --------------------------------------------------------------------
@@ -146,6 +148,8 @@ translateToMLIR tu =
      MLIR.registerAllDialects ctx
      nativeOp <- fromAST ctx (mempty, mempty) $ do
                    let res = runTrav initEnv $ do
+                              -- record all kernels
+                              recordKernelFunctions tu
                               -- analyze globals
                               withExtDeclHandler (analyseAST tu) handlers
                               -- add all enums
@@ -177,16 +181,23 @@ addEnum (Enumerator ident e _ node) = do
 -- | Translate global declaration
 transGDecl :: Decl -> EnvM [AST.Binding]
 transGDecl decl@(Decl var node) = do
-   let (name, (ty, sign)) = varDecl (posOf node) var
-   funcs <- funsWithBody <$> getUserState
-   let found = M.lookup name funcs
-   if isn't _Nothing found then return []
-   else
-     case ty of
-       AST.FunctionType argType resultTypes -> do
-         let f = AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region []
-         return [AST.Do f{AST.opAttributes=AST.opAttributes f <> AST.namedAttribute "sym_visibility" (AST.StringAttr "private")}]
-       _ -> unsupported (posOfNode node) decl
+  let (name, (ty, sign)) = varDecl (posOf node) var
+  funcs <- funsWithBody <$> getUserState
+  let found = M.lookup name funcs
+  if isn't _Nothing found then return []
+  else
+    case ty of
+      AST.FunctionType argType resultTypes -> do
+        let f = AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region []
+        isKernel <- M.lookup name . kernels <$> getUserState
+        let f' = case isKernel of
+              Just isKernel -> 
+                if isKernel then 
+                  f{AST.opAttributes = AST.opAttributes f <> AST.namedAttribute "cl.kernel" (AST.BoolAttr True)}
+                else f
+              Nothing -> f
+        return [AST.Do f'{AST.opAttributes=AST.opAttributes f' <> AST.namedAttribute "sym_visibility" (AST.StringAttr "private")}]
+      _ -> unsupported (posOfNode node) decl
 
 -- | Register all function types into env
 registerFunction :: Decl -> EnvM ()
@@ -204,7 +215,15 @@ transFunction f@(FunDef var stmt node) = do
   underScope $ do
     mapM_ (uncurry addVar) [(a ^._1, (BU.fromString $ a ^._1, a^._2, False)) | a <- params (posOf node) var]
     b <- transBlock args [] stmt []
-    return $ AST.Do $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
+    let f = AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
+    isKernel <- M.lookup name . kernels <$> getUserState
+    let f' = case isKernel of
+              Just isKernel -> 
+                if isKernel then 
+                  f{AST.opAttributes = AST.opAttributes f <> AST.namedAttribute "cl.kernel" (AST.BoolAttr True)}
+                else f
+              Nothing -> f
+    return $ AST.Do f'
 
 -- | Translate a function block
 transBlock :: [(AST.Name, AST.Type)] -> [AST.Binding] -> CStatement NodeInfo -> [AST.Binding] -> EnvM AST.Block
@@ -693,6 +712,20 @@ transStr s@(CString str _) loc = error $ "unsupported for string " ++ str
 
 ------------------------------------------------------------------------------
 -- AST Handlers
+
+recordKernelFunctions :: CTranslUnit -> EnvM ()
+recordKernelFunctions (CTranslUnit decls _) = do
+  forM_ decls $ \decl -> do
+    case decl of
+      CFDefExt (CFunDef declspecs declr oldstyle _ node) -> do
+        declInfo <- analyseVarDecl' True declspecs declr oldstyle Nothing
+        let (VarDeclInfo vname _ storage _ _ _) = declInfo
+            name = identName $ identOfVarName vname
+            kernel = case storage of
+                       ClKernelSpec -> True
+                       _ -> False
+        modifyUserState (\s -> s{kernels=M.insert name kernel (kernels s)})
+      _ -> return ()
 
 handlers :: DeclEvent -> EnvM ()
 handlers (TagEvent (CompDef compT)) = return ()
