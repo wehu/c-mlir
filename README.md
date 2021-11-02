@@ -1,21 +1,21 @@
 # c-mlir
 
-Translator from c to MLIR
+A translator from c to MLIR
 
-Only a small subset of c is supported based on the current semantics of MLIR dialects.
+Only a subset of c is supported based on the current semantics of MLIR dialects.
 
 * Scalar builtin types -> MLIR types
 * Static sizes of array and operation -> MemRef dialect
 * Arithmetic operations -> Arith dialect
 * A limited version of flow control(for/if) -> Affine/SCF dialect
 
-for `for`, if possiable, try to lower to affine.for, and if not, try to lower to scf.for, elsewise scf.while.
+For `for`, if possiable, try to lower to `affine.for`, and if not, try to lower to `scf.for`, elsewise `scf.while`.
 
-pointer is translated as unranked memref.
+`Pointer` is translated as `unranked memref`.
 
-for opencl, `__local` is mapped to memory space 0, `__global` is mapped to memory space 1.
+For opencl, `__local` is mapped to memory space `0`, `__global` is mapped to memory space `1`.
 
-dynamic sizes array, break, continue, goto, & and switch/case are not supported.
+Dynamic sizes array, `break`, `continue`, `goto`, `&` and `switch`/`case` are not supported.
 
 ```c
 __kernel void foo(__global float* input, __local float *a) {
