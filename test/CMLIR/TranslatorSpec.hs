@@ -1201,3 +1201,34 @@ module  {
   }
 }
       |]
+    
+    it "can translate arg pointer access" $ do
+      [r|
+void foo(float* input) {
+  float a[100];
+  for (int i=0; i<100; i+=1) {
+    input[i] = a[i];
+    a[i] = input[i];
+  }
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo(%arg0: memref<*xf32>) {
+    %0 = memref.alloca() : memref<100xf32>
+    affine.for %arg1 = 0 to 100 {
+      %1 = arith.index_cast %arg1 : index to i32
+      %2 = arith.index_cast %1 : i32 to index
+      %3 = memref.load %0[%2] : memref<100xf32>
+      %4 = arith.index_cast %1 : i32 to index
+      %5 = memref.cast %arg0 : memref<*xf32> to memref<?xf32>
+      memref.store %3, %5[%4] : memref<?xf32>
+      %6 = arith.index_cast %1 : i32 to index
+      %7 = memref.cast %arg0 : memref<*xf32> to memref<?xf32>
+      %8 = memref.load %7[%6] : memref<?xf32>
+      %9 = arith.index_cast %1 : i32 to index
+      memref.store %8, %0[%9] : memref<100xf32>
+    }
+    return
+  }
+}
+      |]

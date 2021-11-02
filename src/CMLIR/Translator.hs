@@ -391,9 +391,9 @@ transExpr (CVar ident node) = do
       else return ([Right id], (ty, sign))
 transExpr (CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
-  (id, ty, srcBs) <- case src of
-                       CVar ident _ -> (\(a, b, c) -> (a, b, [])) <$> lookupVar (identName ident)
-                       _ -> (\(a, b) -> (lastId a, b, a)) <$> transExpr src
+  (id, ty, srcBs, isLocal) <- case src of
+                       CVar ident _ -> (\(a, b, c) -> (a, b, [], c)) <$> lookupVar (identName ident)
+                       _ -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr src
   (rhsBs, rhsTy) <- transExpr (case op of
                       CAssignOp -> rhs
                       CMulAssOp -> CBinary CMulOp lhs rhs node
@@ -428,10 +428,13 @@ transExpr (CAssign op lhs rhs node) = do
     id2 <- freshName
     let st = case ty of
                (ty@AST.UnrankedMemRefType{}, _) ->
-                 [Left $ id0 AST.:= constIndex0 (getPos node)
-                 ,Left $ id1 AST.:= MemRef.Load ty id [id0] 
-                 ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing Nothing) id1
-                 ,Left $ AST.Do $ MemRef.Store rhsId id2 (toIndices ^.. traverse . _2)]
+                 if isLocal 
+                 then [Left $ id0 AST.:= constIndex0 (getPos node)
+                      ,Left $ id1 AST.:= MemRef.Load ty id [id0] 
+                      ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing Nothing) id1
+                      ,Left $ AST.Do $ MemRef.Store rhsId id2 (toIndices ^.. traverse . _2)]
+                 else [Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing Nothing) id
+                      ,Left $ AST.Do $ MemRef.Store rhsId id2 (toIndices ^.. traverse . _2)]
                _ -> [Left $ AST.Do $ MemRef.Store rhsId id (toIndices ^.. traverse . _2)]
     return (srcBs ++ rhsBs ++ join (indexBs ^.. traverse . _1) ++
             toIndices ^.. traverse . _1 ++ st, (dstTy, sign))
@@ -489,10 +492,10 @@ transExpr (CCond cond (Just lhs) rhs node) = do
           [Left sel, Right id], (lhsTy, lhsSign))
 transExpr (CIndex e index node) = do
   let (src, indices) = collectIndices e [index]
-  (srcId, (srcTy, sign), srcBs) <-
+  (srcId, (srcTy, sign), srcBs, isLocal) <-
      case src of
-       CVar ident _ -> (\(a, b, c) -> (a, b, [])) <$> lookupVar (identName ident)
-       _ -> (\(a, b) -> (lastId a, b, a)) <$> transExpr src
+       CVar ident _ -> (\(a, b, c) -> (a, b, [],c)) <$> lookupVar (identName ident)
+       _ -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr src
   indexBs <- mapM transExpr indices
   let indexIds = map lastId (indexBs ^.. traverse . _1)
   toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
@@ -506,10 +509,13 @@ transExpr (CIndex e index node) = do
   id2 <- freshName
   let ld = case srcTy of
              AST.UnrankedMemRefType ty _ ->
-               [Left $ id0 AST.:= constIndex0 (getPos node)
-               ,Left $ id1 AST.:= MemRef.Load srcTy srcId [id0] 
-               ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing Nothing) id1
-               ,Left $ id AST.:= MemRef.Load ty id2 (toIndices ^.. traverse . _2)]
+               if isLocal
+               then [Left $ id0 AST.:= constIndex0 (getPos node)
+                    ,Left $ id1 AST.:= MemRef.Load srcTy srcId [id0] 
+                    ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing Nothing) id1
+                    ,Left $ id AST.:= MemRef.Load ty id2 (toIndices ^.. traverse . _2)]
+               else [Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing Nothing) srcId
+                    ,Left $ id AST.:= MemRef.Load ty id2 (toIndices ^.. traverse . _2)]
              _ -> [Left $ id AST.:= MemRef.Load ty srcId (toIndices ^.. traverse . _2)]
   return (srcBs ++ join (indexBs ^.. traverse . _1) ++
           toIndices ^.. traverse . _1 ++ ld ++ [Right id], (ty, sign))
