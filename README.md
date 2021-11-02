@@ -5,7 +5,7 @@
 Only a subset of c is supported based on the current semantics of MLIR dialects.
 
 * Scalar builtin types -> MLIR types
-* Static sizes of array and operation -> MemRef dialect
+* Static sizes of array and operations -> MemRef dialect
 * Arithmetic operations -> Arith dialect
 * A limited version of flow control(for/if) -> Affine/SCF dialect
 
@@ -13,7 +13,7 @@ For `for`, if possiable, try to lower to `affine.for`, and if not, try to lower 
 
 `Pointer` is translated as `unranked memref`.
 
-For opencl, `__local` is mapped to memory space `0`, `__global` is mapped to memory space `1`.
+For opencl, `__local` is mapped to memory space `1`, `__global` is mapped to memory space `2`.
 
 Dynamic sizes array, `break`, `continue`, `goto`, `&` and `switch`/`case` are not supported.
 
