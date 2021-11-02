@@ -40,6 +40,7 @@ import qualified Data.List as L
 import qualified Data.Map as M
 import System.Exit
 import Debug.Trace
+import GHC.IO.Encoding.Iconv (localeEncodingName)
 
 type SType = (AST.Type, Bool)
 
@@ -580,7 +581,19 @@ transExpr (CUnary CNegOp e node) = do
             ,Left $ id2 AST.:= Arith.SubI loc eTy id0 id1
             ,Left $ id AST.:= Arith.XOrI loc eTy id2 (lastId eBs)]
   return (eBs ++ bs ++ [Right id], (eTy, eSign))
-
+transExpr (CUnary CIndOp e node) = do
+  (eBs, (eTy, eSign)) <- transExpr e
+  id <- freshName
+  id0 <- freshName
+  id1 <- freshName
+  let loc = getPos node
+      resTy = case eTy of
+                AST.UnrankedMemRefType t _ -> t
+                _ -> unsupported (posOf node) e
+      bs = [Left $ id0 AST.:= constIndex0 loc
+           ,Left $ id1 AST.:= MemRef.cast loc (AST.MemRefType [Nothing] resTy Nothing Nothing) (lastId eBs)
+           ,Left $ id AST.:= MemRef.Load resTy id1 [id0]]
+  return (eBs ++ bs ++ [Right id], (resTy, eSign))
 transExpr e = unsupported (posOf e) e
 
 -- | Translate a constant expression
@@ -702,7 +715,9 @@ type_ pos ty@(DirectType name quals attrs) =
     TyEnum ref -> unsupported pos ty
     TyBuiltin _ -> unsupported pos ty
     _ -> unsupported pos ty
-type_ pos ty@(PtrType t quals attrs) = unsupported pos ty --AST.MemRefType [Nothing] (type_ t) Nothing Nothing
+type_ pos ty@(PtrType t quals attrs) = 
+  let (tt, sign) = type_ pos t
+   in (AST.UnrankedMemRefType tt (AST.IntegerAttr (AST.IntegerType AST.Signless 64) 0), sign)
 type_ pos (ArrayType t size quals attrs) =
   let s = arraySize size
    in case type_ pos t of

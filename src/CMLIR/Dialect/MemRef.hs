@@ -17,3 +17,14 @@ alloca loc ty dyns syms = Operation
                        DenseElementsAttr (VectorType [2] $ IntegerType Unsigned 32) $
                          DenseUInt32 $ listArray (0 :: Int, 1) $ fromIntegral <$> [length dyns, length syms]
   }
+
+cast :: Location -> Type -> Name -> Operation
+cast loc ty src = Operation
+  { opName = "memref.cast"
+  , opLocation = loc
+  , opResultTypes = Explicit [ty]
+  , opOperands = [src]
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = NoAttrs
+  }
