@@ -376,10 +376,9 @@ transExpr (CVar ident node) = do
   else return ([Right id], (ty, sign))
 transExpr (CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
-  let name = case src of
-               CVar ident _ -> identName ident
-               _ -> unsupported (posOf src) src
-  (id, ty, isLocal) <- lookupVar name
+  (id, ty, srcBs) <- case src of
+                       CVar ident _ -> (\(a, b, c) -> (a, b, [])) <$> lookupVar (identName ident)
+                       _ -> (\(a, b) -> (lastId a, b, a)) <$> transExpr src
   (rhsBs, rhsTy) <- transExpr (case op of
                       CAssignOp -> rhs
                       CMulAssOp -> CBinary CMulOp lhs rhs node
@@ -399,7 +398,7 @@ transExpr (CAssign op lhs rhs node) = do
         op0 = id0 AST.:= c
     let st = MemRef.Store rhsId id [id0]
         op1 = AST.Do st
-    return (rhsBs ++ [Left op0, Left op1], ty)
+    return (srcBs ++ rhsBs ++ [Left op0, Left op1], ty)
   else do
     indexBs <- mapM transExpr indices
     let indexIds = map lastId (indexBs ^.. traverse . _1)
@@ -408,7 +407,7 @@ transExpr (CAssign op lhs rhs node) = do
                   (AST.MemRefType _ ty _ _, sign) -> (ty, sign)
                   _ -> unsupported (posOf src) src
     let st = AST.Do $ MemRef.Store rhsId id (toIndices ^.. traverse . _2)
-    return (rhsBs ++ join (indexBs ^.. traverse . _1) ++
+    return (srcBs ++ rhsBs ++ join (indexBs ^.. traverse . _1) ++
             toIndices ^.. traverse . _1 ++ [Left st], (dstTy, sign))
 transExpr (CBinary bop lhs rhs node) = do
   (lhsBs, (lhsTy, lhsSign)) <- transExpr lhs
@@ -464,10 +463,10 @@ transExpr (CCond cond (Just lhs) rhs node) = do
           [Left sel, Right id], (lhsTy, lhsSign))
 transExpr (CIndex e index node) = do
   let (src, indices) = collectIndices e [index]
-  let name = case src of
-               CVar ident _ -> identName ident
-               _ -> unsupported (posOf src) src
-  (srcId, (srcTy, sign), isLocal) <- lookupVar name
+  (srcId, (srcTy, sign), srcBs) <-
+     case src of
+       CVar ident _ -> (\(a, b, c) -> (a, b, [])) <$> lookupVar (identName ident)
+       _ -> (\(a, b) -> (lastId a, b, a)) <$> transExpr src
   indexBs <- mapM transExpr indices
   let indexIds = map lastId (indexBs ^.. traverse . _1)
   toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
@@ -476,7 +475,7 @@ transExpr (CIndex e index node) = do
              _ -> unsupported (posOf src) src
   id <- freshName
   let ld = id AST.:= MemRef.Load ty srcId (toIndices ^.. traverse . _2)
-  return (join (indexBs ^.. traverse . _1) ++
+  return (srcBs ++ join (indexBs ^.. traverse . _1) ++
           toIndices ^.. traverse . _1 ++ [Left ld, Right id], (ty, sign))
 transExpr c@(CCast t e node) = do
   (srcBs, (srcTy, srcSign)) <- transExpr e
