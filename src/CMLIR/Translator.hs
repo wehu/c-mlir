@@ -43,7 +43,6 @@ import qualified Data.List as L
 import qualified Data.Map as M
 import System.Exit
 import Debug.Trace
-import GHC.IO.Encoding.Iconv (localeEncodingName)
 
 type SType = (AST.Type, Bool)
 
@@ -184,7 +183,7 @@ translateToMLIR opts tu =
                   MLIR.addConvertReconcileUnrealizedCastsPass pm
                   (== MLIR.Success) <$> MLIR.runPasses pm m
               else MLIR.verifyOperation nativeOp
-     -- MLIR.dump nativeOp
+     --MLIR.dump nativeOp
      unless check $ exitWith (ExitFailure 1)
      if jit opts then do
        Just m <- MLIR.moduleFromOperation nativeOp
@@ -731,6 +730,11 @@ transFloat (CFloat str) loc = do
 -- | Translate a string literal
 transStr :: CString -> AST.Location -> EnvM ([BindingOrName], SType)
 transStr s@(CString str _) loc = error $ "unsupported for string " ++ str
+--  id <- freshName
+--  let ty = AST.VectorType [length str] (AST.IntegerType AST.Signless 8)
+--      cs = AST.DenseElementsAttr ty $
+--             AST.DenseUInt8 $ listArray (0 :: Int, (length str)-1) $ fromIntegral . ord <$> str
+--  return ([Left $ id AST.:= Arith.Constant loc ty cs], (ty, True))
 
 ------------------------------------------------------------------------------
 -- AST Handlers
