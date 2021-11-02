@@ -696,7 +696,8 @@ type_ pos ty@(DirectType name quals attrs) =
     TyFloating (id -> TyDouble) -> (AST.Float64Type, True)
     TyFloating (id -> TyLDouble) -> (AST.Float64Type, True)
     TyFloating (id -> TyFloatN n _) -> unsupported pos ty
-    TyComplex t -> type_ pos (DirectType (TyFloating t) quals attrs)
+    TyComplex t -> let (ct, sign) = type_ pos (DirectType (TyFloating t) quals attrs)
+                    in (AST.ComplexType ct, sign)
     TyComp ref -> unsupported pos ty
     TyEnum ref -> unsupported pos ty
     TyBuiltin _ -> unsupported pos ty
