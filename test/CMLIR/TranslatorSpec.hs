@@ -1115,7 +1115,6 @@ void foo() {
   int *v0;
   *v0 + 1;
 }
-
       |] `shouldBeTranslatedAs` [r|
 module  {
   func @foo() {
