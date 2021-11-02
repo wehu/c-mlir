@@ -1108,3 +1108,26 @@ module  {
   }
 }
       |]
+    
+    it "can translate pointer" $ do
+      [r|
+void foo() {
+  int *v0;
+  *v0 + 1;
+}
+
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() {
+    %0 = memref.alloca() : memref<1xmemref<*xi32>>
+    %c0 = arith.constant 0 : index
+    %1 = memref.load %0[%c0] : memref<1xmemref<*xi32>>
+    %c0_0 = arith.constant 0 : index
+    %2 = memref.cast %1 : memref<*xi32> to memref<?xi32>
+    %3 = memref.load %2[%c0_0] : memref<?xi32>
+    %c1_i32 = arith.constant 1 : i32
+    %4 = arith.addi %3, %c1_i32 : i32
+    return
+  }
+}
+      |]
