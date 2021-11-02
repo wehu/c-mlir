@@ -173,19 +173,18 @@ translateToMLIR opts tu =
                    case res of
                      Left errs -> error $ show errs
                      Right (res, _) -> res
-     when (toLLVM opts) $ do
-       Just m <- MLIR.moduleFromOperation nativeOp
-       MLIR.withPassManager ctx $ \pm -> do
-         MLIR.addConvertAffineToStandardPass pm
-         MLIR.addConvertSCFToStandardPass  pm
-         MLIR.addConvertMemRefToLLVMPass   pm
-         MLIR.addConvertVectorToLLVMPass   pm
-         MLIR.addConvertStandardToLLVMPass pm
-         MLIR.addConvertReconcileUnrealizedCastsPass pm
-         MLIR.runPasses pm m
-         return ()
+     check <- if toLLVM opts then do
+                Just m <- MLIR.moduleFromOperation nativeOp
+                MLIR.withPassManager ctx $ \pm -> do
+                  MLIR.addConvertAffineToStandardPass pm
+                  MLIR.addConvertSCFToStandardPass  pm
+                  MLIR.addConvertMemRefToLLVMPass   pm
+                  MLIR.addConvertVectorToLLVMPass   pm
+                  MLIR.addConvertStandardToLLVMPass pm
+                  MLIR.addConvertReconcileUnrealizedCastsPass pm
+                  (== MLIR.Success) <$> MLIR.runPasses pm m
+              else MLIR.verifyOperation nativeOp
      -- MLIR.dump nativeOp
-     check <- MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
      if jit opts then do
        Just m <- MLIR.moduleFromOperation nativeOp
