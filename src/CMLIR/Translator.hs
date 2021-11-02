@@ -190,12 +190,9 @@ transGDecl decl@(Decl var node) = do
       AST.FunctionType argType resultTypes -> do
         let f = AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region []
         isKernel <- M.lookup name . kernels <$> getUserState
-        let f' = case isKernel of
-              Just isKernel -> 
-                if isKernel then 
-                  f{AST.opAttributes = AST.opAttributes f <> AST.namedAttribute "cl.kernel" (AST.BoolAttr True)}
-                else f
-              Nothing -> f
+        let f' = if isKernel ^. non False then
+                   f{AST.opAttributes = AST.opAttributes f <> AST.namedAttribute "cl.kernel" (AST.BoolAttr True)}
+                 else f
         return [AST.Do f'{AST.opAttributes=AST.opAttributes f' <> AST.namedAttribute "sym_visibility" (AST.StringAttr "private")}]
       _ -> unsupported (posOfNode node) decl
 
@@ -217,12 +214,9 @@ transFunction f@(FunDef var stmt node) = do
     b <- transBlock args [] stmt []
     let f = AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
     isKernel <- M.lookup name . kernels <$> getUserState
-    let f' = case isKernel of
-              Just isKernel -> 
-                if isKernel then 
-                  f{AST.opAttributes = AST.opAttributes f <> AST.namedAttribute "cl.kernel" (AST.BoolAttr True)}
-                else f
-              Nothing -> f
+    let f' = if isKernel ^.non False then
+               f{AST.opAttributes = AST.opAttributes f <> AST.namedAttribute "cl.kernel" (AST.BoolAttr True)}
+             else f
     return $ AST.Do f'
 
 -- | Translate a function block
