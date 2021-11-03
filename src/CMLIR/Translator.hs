@@ -4,8 +4,6 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 module CMLIR.Translator where
 
 import qualified MLIR.AST.Builder as AST
@@ -51,6 +49,7 @@ import Debug.Trace
 import Foreign (withForeignPtr)
 import Foreign.Storable
 import Foreign.Ptr
+import Foreign.Marshal.Alloc
 
 type SType = (AST.Type, Bool)
 
@@ -155,18 +154,6 @@ data Options = Options {toLLVM :: Bool, dumpLoc :: Bool, jit :: Bool}
 
 defaultOptions = Options {toLLVM = False, dumpLoc = False, jit = False}
 
-newtype AlignedStorable a = Aligned a
-deriving instance Num a => Num (AlignedStorable a)
-deriving instance Fractional a => Fractional (AlignedStorable a)
-deriving instance Show a => Show (AlignedStorable a)
-deriving instance Eq a => Eq (AlignedStorable a)
-deriving instance Ord a => Ord (AlignedStorable a)
-instance Storable a => Storable (AlignedStorable a) where
-  sizeOf        (Aligned x) = sizeOf x
-  alignment     (Aligned _) = 64
-  peek      ptr             = Aligned <$> peek (castPtr ptr)
-  poke      ptr (Aligned x) = poke (castPtr ptr) x
-
 -- | Translate c AST to MLIR
 translateToMLIR :: Options -> CTranslUnit -> IO String
 translateToMLIR opts tu =
@@ -211,26 +198,27 @@ translateToMLIR opts tu =
        -- run jit
        Just m <- MLIR.moduleFromOperation nativeOp
        evalContT $ do
-         let fn = "main"
-             ft = fs ^. at "main"
+         let fn = "main" :: String
+             ft = fs ^. at fn
              (inputSizes, outputSizes) =
                 case ft of
-                  Just ft -> case ft of
-                               (AST.FunctionType args results) ->
-                                 (map sizeOfType args, map sizeOfType results)
-                               _ -> ([], [])
+                  Just ft ->
+                    case ft of
+                      (AST.FunctionType args results) ->
+                        (map sizeOfType args, map sizeOfType results)
+                      _ -> ([], [])
                   Nothing -> ([], [])
              buffer size = do
-               vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN size (+1) (1 :: AlignedStorable Int8)
+               vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN size (+1) (1 :: Int8)
                ptr <- ContT $ withForeignPtr fptr
                structPtr <- ContT $ MLIR.packStruct64 [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr, MLIR.SomeStorable (0::Int64)]
                return (MLIR.SomeStorable structPtr, vec)
          inputs <- mapM buffer inputSizes
          outputs <- mapM buffer outputSizes
          (Just eng) <- ContT $ MLIR.withExecutionEngine m
-         name <- ContT $ MLIR.withStringRef fn
-         liftIO $ MLIR.executionEngineInvoke @() eng name (inputs ^..traverse._1 ++ outputs ^..traverse._1)
-         liftIO $ join <$> mapM (fmap show . V.unsafeFreeze) (outputs ^..traverse._2)
+         name <- ContT $ MLIR.withStringRef (BU.fromString fn)
+         (Just ()) <- liftIO $ MLIR.executionEngineInvoke @() eng name (inputs ^..traverse._1 ++ outputs ^..traverse._1)
+         liftIO $ join <$> mapM (fmap show . V.unsafeFreeze) (inputs ^..traverse._2 ++ outputs ^..traverse._2)
      else
        BU.toString <$> (if dumpLoc opts then MLIR.showOperationWithLocation
                         else MLIR.showOperation) nativeOp)
@@ -241,6 +229,8 @@ sizeOfType AST.IndexType = 8
 sizeOfType AST.Float16Type = 2
 sizeOfType AST.Float32Type = 4
 sizeOfType AST.Float64Type = 8
+-- sizeOfType AST.UnrankedMemRefType{} = 8*2
+sizeOfType (AST.MemRefType ds t _ _) = sizeOfType t * sum (ds ^..traverse._Just)
 sizeOfType t = error "unsupported"
 
 -- | Add a jit wrapper for function
