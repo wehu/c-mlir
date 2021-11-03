@@ -1154,6 +1154,26 @@ module  {
   }
 }
       |]
+
+    it "can translate pointer assign" $ do
+      [r|
+void main() {
+  int *a;
+  *a = 1;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @main() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<1xmemref<?xi32>>
+    %c0 = arith.constant 0 : index
+    %1 = memref.load %0[%c0] : memref<1xmemref<?xi32>>
+    %c1_i32 = arith.constant 1 : i32
+    %c0_0 = arith.constant 0 : index
+    memref.store %c1_i32, %1[%c0_0] : memref<?xi32>
+    return
+  }
+}
+      |]
   
     it "can translate pointer casting" $ do
       [r|
