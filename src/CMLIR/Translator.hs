@@ -48,7 +48,7 @@ import Debug.Trace
 type SType = (AST.Type, Bool)
 
 data Env = Env {decls :: [Decl],
-                objDefs :: [ObjDef],
+                objDefs :: M.Map Position ObjDef,
                 funDefs :: [FunDef],
                 funsWithBody :: M.Map String Bool,
                 enumerators :: [Enumerator],
@@ -64,7 +64,7 @@ type EnvM = TravT Env Identity
 type BindingOrName = Either AST.Binding BU.ByteString
 
 initEnv = Env{decls = [],
-              objDefs = [],
+              objDefs = M.empty,
               funDefs = [],
               funsWithBody = M.empty,
               enumerators = [],
@@ -270,10 +270,15 @@ transBlock args _ s _ = unsupported (posOf s) s
 -- | Translate a statement in block
 transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [BindingOrName]
 transBlockItem (CBlockStmt s) = transStmt s
-transBlockItem (CBlockDecl decl) = do
-  modifyUserState (\s -> s{objDefs=[]})
-  withExtDeclHandler (analyseDecl True decl) handleLDecl
-  getUserState >>= (\s -> join <$> mapM transLocalDecl (objDefs s))
+transBlockItem (CBlockDecl (CDecl _ ds node)) = do
+  join <$> mapM (\d -> do
+    case d of
+      (Just decl, _, _) -> do
+        objDef <- M.lookup (posOf decl) . objDefs <$> getUserState
+        case objDef of
+          Just objDef -> transLocalDecl objDef
+          Nothing -> error $ "cannot find " ++ show (posOf decl)
+      _ -> error $ "unsupported " ++ show (posOf node)) ds
 transBlockItem s = unsupported (posOf s) s
 
 -- | Translate a local variable declaration
@@ -296,7 +301,7 @@ transLocalDecl (ObjDef var init node) = do
                        id0 <- freshName
                        return (s++[Left $ id0 AST.:= constInt (getPos node) AST.IndexType index
                                   ,Left $ AST.Do $ (MemRef.Store (lastId initBs) id [id0]){AST.opLocation=getPos node}], index+1))
-                       ([], 0::Int) 
+                       ([], 0::Int)
                       (fromJust initBs)
         else return []
   addVar n (id, t, True)
@@ -773,12 +778,9 @@ handlers (TagEvent (EnumDef (EnumType _ es _ node))) = modifyUserState (\s -> s{
 handlers (DeclEvent (Declaration decl)) = modifyUserState (\s -> s{decls=decls s ++ [decl]})
 handlers (DeclEvent (FunctionDef funDef)) = modifyUserState (\s -> s{funDefs=funDefs s ++ [funDef]})
 handlers (TypeDefEvent typeDef) = modifyUserState (\s -> s{typeDefs=typeDefs s ++ [typeDef]})
+handlers (LocalEvent (ObjectDef objDef)) = modifyUserState (\s -> s{objDefs=M.insert (posOf objDef) objDef (objDefs s)})
 handlers (AsmEvent (CStrLit c n)) = return ()
 handlers _ = return ()
-
-handleLDecl :: DeclEvent -> EnvM ()
-handleLDecl (LocalEvent (ObjectDef objDef)) = modifyUserState (\s -> s{objDefs=objDefs s ++ [objDef]})
-handleLDecl _ = return ()
 
 identName :: Ident -> String
 identName (Ident ident _ _) = ident
