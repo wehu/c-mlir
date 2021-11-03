@@ -1155,7 +1155,7 @@ module  {
 }
       |]
 
-    it "can translate pointer assign" $ do
+    it "can translate pointer deref assign" $ do
       [r|
 void main() {
   int *a;
