@@ -214,7 +214,7 @@ translateToMLIR opts tu =
                case t of
                  AST.MemRefType {} -> do
                    structPtr <- ContT $ MLIR.packStruct64 $
-                     [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr] ++ replicate n (MLIR.SomeStorable (0::Int64))
+                     [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr] ++ replicate (2*n+1) (MLIR.SomeStorable (0::Int64))
                    return (MLIR.SomeStorable structPtr, vec)
                  _ -> error "only support memref type in argument for jit"
          inputs <- mapM buffer argSizes
@@ -234,7 +234,7 @@ sizeOfType ty@AST.Float32Type = (ty, 4, 1)
 sizeOfType ty@AST.Float64Type = (ty, 8, 1)
 sizeOfType ty@(AST.MemRefType ds t _ _) =
   let size = product (ds ^..traverse._Just)
-   in (ty, sizeOfType t ^._2 * size, size)
+   in (ty, sizeOfType t ^._2 * size, L.length ds)
 sizeOfType t = error "unsupported"
 
 -- | Add a jit wrapper for function
