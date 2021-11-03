@@ -1263,3 +1263,23 @@ module  {
   }
 }
       |]
+    
+    it "can translate init list" $ do
+      [r|
+void foo() {
+  int a[2] = {1,2};
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %c1_i32 = arith.constant 1 : i32
+    %c2_i32 = arith.constant 2 : i32
+    %0 = memref.alloca() : memref<2xi32>
+    %c0 = arith.constant 0 : index
+    memref.store %c1_i32, %0[%c0] : memref<2xi32>
+    %c1 = arith.constant 1 : index
+    memref.store %c2_i32, %0[%c1] : memref<2xi32>
+    return
+  }
+}
+      |]

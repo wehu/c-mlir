@@ -38,6 +38,7 @@ import Control.Monad
 import Control.Monad.Trans
 import Control.Lens
 import Data.Maybe
+import qualified Data.Sequence as Seq
 import Data.Char (ord)
 import qualified Data.List as L
 import qualified Data.Map as M
@@ -193,13 +194,13 @@ translateToMLIR opts tu =
          MLIR.withStringRef "main" $ \name -> do
            MLIR.executionEngineInvoke @() eng name []
        return ""
-     else  
+     else
        BU.toString <$> (if dumpLoc opts then MLIR.showOperationWithLocation
                         else MLIR.showOperation) nativeOp)
 
 -- | Add a jit wrapper for function
 emitted :: AST.Operation -> AST.Operation
-emitted op = op { AST.opAttributes = AST.opAttributes op <> 
+emitted op = op { AST.opAttributes = AST.opAttributes op <>
                   AST.namedAttribute "llvm.emit_c_interface" AST.UnitAttr }
 
 -- | Add enums
@@ -283,7 +284,6 @@ transLocalDecl (ObjDef var init node) = do
     Static{} -> error $ "static is not supported" ++ show (posOf node)
     _ -> return ()
   id <- freshName
-  id0 <- freshName
   initBs <- mapM transInit init
   let (n, t) = varDecl (posOf node) var
       mt = case t of
@@ -291,18 +291,28 @@ transLocalDecl (ObjDef var init node) = do
              (t, _) -> AST.MemRefType [Just 1] t Nothing Nothing
       alloc = MemRef.alloca (getPos node) mt [] []
       b = Left $ id AST.:= alloc
-      st = if isn't _Nothing initBs then
-             [Left $ id0 AST.:= constIndex0 (getPos node)
-             ,Left $ AST.Do $ (MemRef.Store (lastId $ fromJust initBs) id [id0]){AST.opLocation=getPos node}]
-           else []
+  st <- if isn't _Nothing initBs then do
+          (^._1) <$> foldM (\(s, index) initBs -> do
+                       id0 <- freshName
+                       return (s++[Left $ id0 AST.:= constInt (getPos node) AST.IndexType index
+                                  ,Left $ AST.Do $ (MemRef.Store (lastId initBs) id [id0]){AST.opLocation=getPos node}], index+1))
+                       ([], 0::Int) 
+                      (fromJust initBs)
+        else return []
   addVar n (id, t, True)
-  return $ fromMaybe [] initBs ++ [b] ++ st
+  return $ join (fromMaybe [[]] initBs) ++ [b] ++ st
 
 -- | Translate an initalization expression
-transInit :: CInitializer NodeInfo -> EnvM [BindingOrName]
+transInit :: CInitializer NodeInfo -> EnvM [[BindingOrName]]
 transInit (CInitExpr e node) = do
   bs <- transExpr e
-  return $ bs ^._1
+  return [bs ^._1]
+transInit (CInitList [] _) = return []
+transInit (CInitList (([], init):res) node) = do
+  i <- transInit init
+  r <- transInit (CInitList res node)
+  let [i'] = i
+  return $ i':r
 transInit init = unsupported (posOf init) init
 
 -- | Translate a statement
@@ -844,7 +854,7 @@ params pos (VarDecl name attr ty) = f ty
         ps (FunTypeIncomplete ty) = unsupported pos ty
 
 memorySpace :: VarDecl -> Int
-memorySpace var = 
+memorySpace var =
   let storage = declStorage var
    in case storage of
         (Static NoLinkage True) -> 1
