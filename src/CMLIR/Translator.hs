@@ -200,25 +200,24 @@ translateToMLIR opts tu =
        evalContT $ do
          let fn = "main" :: String
              ft = fs ^. at fn
-             (inputSizes, outputSizes) =
+             argSizes =
                 case ft of
                   Just ft ->
                     case ft of
                       (AST.FunctionType args results) ->
-                        (map sizeOfType args, map sizeOfType results)
-                      _ -> ([], [])
-                  Nothing -> ([], [])
+                        map sizeOfType args ++ map sizeOfType results
+                      _ -> []
+                  Nothing -> []
              buffer size = do
                vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN size (+1) (1 :: Int8)
                ptr <- ContT $ withForeignPtr fptr
                structPtr <- ContT $ MLIR.packStruct64 [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr, MLIR.SomeStorable (0::Int64)]
                return (MLIR.SomeStorable structPtr, vec)
-         inputs <- mapM buffer inputSizes
-         outputs <- mapM buffer outputSizes
+         inputs <- mapM buffer argSizes
          (Just eng) <- ContT $ MLIR.withExecutionEngine m
          name <- ContT $ MLIR.withStringRef (BU.fromString fn)
-         (Just ()) <- liftIO $ MLIR.executionEngineInvoke @() eng name (inputs ^..traverse._1 ++ outputs ^..traverse._1)
-         liftIO $ join <$> mapM (fmap show . V.unsafeFreeze) (inputs ^..traverse._2 ++ outputs ^..traverse._2)
+         (Just ()) <- liftIO $ MLIR.executionEngineInvoke @() eng name (inputs ^..traverse._1)
+         liftIO $ join <$> mapM (fmap show . V.unsafeFreeze) (inputs ^..traverse._2)
      else
        BU.toString <$> (if dumpLoc opts then MLIR.showOperationWithLocation
                         else MLIR.showOperation) nativeOp)
