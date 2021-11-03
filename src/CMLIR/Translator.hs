@@ -289,7 +289,7 @@ transLocalDecl (ObjDef var init node) = do
       b = Left $ id AST.:= alloc
       st = if isn't _Nothing initBs then
              [Left $ id0 AST.:= constIndex0 (getPos node)
-             ,Left $ AST.Do $ MemRef.Store (lastId $ fromJust initBs) id [id0]]
+             ,Left $ AST.Do $ (MemRef.Store (lastId $ fromJust initBs) id [id0]){AST.opLocation=getPos node}]
            else []
   addVar n (id, t, True)
   return $ fromMaybe [] initBs ++ [b] ++ st
@@ -430,7 +430,7 @@ transExpr (CVar ident node) = do
             op0 = id0 AST.:= c
         id1 <- freshName
         let ld = MemRef.Load ty id [id0]
-            op1 = id1 AST.:= ld
+            op1 = id1 AST.:= ld{AST.opLocation = getPos node}
         return ([Left op0, Left op1, Right id1], (ty, sign))
       else return ([Right id], (ty, sign))
 transExpr (CAssign op lhs rhs node) = do
@@ -456,7 +456,7 @@ transExpr (CAssign op lhs rhs node) = do
     let c = constIndex0 (getPos node)
         op0 = id0 AST.:= c
     let st = MemRef.Store rhsId id [id0]
-        op1 = AST.Do st
+        op1 = AST.Do st{AST.opLocation = getPos node}
     return (srcBs ++ rhsBs ++ [Left op0, Left op1], ty)
   else do
     indexBs <- mapM transExpr indices
@@ -474,12 +474,12 @@ transExpr (CAssign op lhs rhs node) = do
                (ty@(AST.UnrankedMemRefType _ ms), _) ->
                  if isLocal
                  then [Left $ id0 AST.:= constIndex0 (getPos node)
-                      ,Left $ id1 AST.:= MemRef.Load ty id [id0]
+                      ,Left $ id1 AST.:= (MemRef.Load ty id [id0]){AST.opLocation = getPos node}
                       ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing (Just ms)) id1
-                      ,Left $ AST.Do $ MemRef.Store rhsId id2 (toIndices ^.. traverse . _2)]
+                      ,Left $ AST.Do $ (MemRef.Store rhsId id2 (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
                  else [Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing (Just ms)) id
-                      ,Left $ AST.Do $ MemRef.Store rhsId id2 (toIndices ^.. traverse . _2)]
-               _ -> [Left $ AST.Do $ MemRef.Store rhsId id (toIndices ^.. traverse . _2)]
+                      ,Left $ AST.Do $ (MemRef.Store rhsId id2 (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
+               _ -> [Left $ AST.Do $ (MemRef.Store rhsId id (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
     return (srcBs ++ rhsBs ++ join (indexBs ^.. traverse . _1) ++
             toIndices ^.. traverse . _1 ++ st, (dstTy, sign))
 transExpr (CBinary bop lhs rhs node) = do
@@ -555,12 +555,12 @@ transExpr (CIndex e index node) = do
              AST.UnrankedMemRefType ty ms ->
                if isLocal
                then [Left $ id0 AST.:= constIndex0 (getPos node)
-                    ,Left $ id1 AST.:= MemRef.Load srcTy srcId [id0]
+                    ,Left $ id1 AST.:= (MemRef.Load srcTy srcId [id0]){AST.opLocation=getPos node}
                     ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing (Just ms)) id1
-                    ,Left $ id AST.:= MemRef.Load ty id2 (toIndices ^.. traverse . _2)]
+                    ,Left $ id AST.:= (MemRef.Load ty id2 (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
                else [Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing (Just ms)) srcId
-                    ,Left $ id AST.:= MemRef.Load ty id2 (toIndices ^.. traverse . _2)]
-             _ -> [Left $ id AST.:= MemRef.Load ty srcId (toIndices ^.. traverse . _2)]
+                    ,Left $ id AST.:= (MemRef.Load ty id2 (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
+             _ -> [Left $ id AST.:= (MemRef.Load ty srcId (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
   return (srcBs ++ join (indexBs ^.. traverse . _1) ++
           toIndices ^.. traverse . _1 ++ ld ++ [Right id], (ty, sign))
 transExpr c@(CCast t e node) = do
@@ -680,7 +680,7 @@ transExpr (CUnary CIndOp e node) = do
                 _ -> unsupported (posOf node) e
       bs = [Left $ id0 AST.:= constIndex0 loc
            ,Left $ id1 AST.:= MemRef.cast loc (AST.MemRefType [Nothing] resTy Nothing (Just ms)) (lastId eBs)
-           ,Left $ id AST.:= MemRef.Load resTy id1 [id0]]
+           ,Left $ id AST.:= (MemRef.Load resTy id1 [id0]){AST.opLocation = loc}]
   return (eBs ++ bs ++ [Right id], (resTy, eSign))
 transExpr e = unsupported (posOf e) e
 
