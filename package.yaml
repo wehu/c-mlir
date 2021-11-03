@@ -26,8 +26,10 @@ dependencies:
 - utf8-string
 - containers
 - mtl
+- transformers
 - lens
 - array
+- vector
 - optparse-applicative
 
 library:

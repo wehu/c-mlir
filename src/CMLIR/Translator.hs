@@ -4,6 +4,8 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 module CMLIR.Translator where
 
 import qualified MLIR.AST.Builder as AST
@@ -35,22 +37,27 @@ import Language.C.Data.Node
 import Language.C.Data.Position
 import Language.C.Pretty
 import Control.Monad
-import Control.Monad.Trans
+import Control.Monad.Trans.Cont
+import Control.Monad.IO.Class
 import Control.Lens
 import Data.Maybe
-import qualified Data.Sequence as Seq
+import Data.Int
+import qualified Data.Vector.Storable as V
 import Data.Char (ord)
 import qualified Data.List as L
 import qualified Data.Map as M
 import System.Exit
 import Debug.Trace
+import Foreign (withForeignPtr)
+import Foreign.Storable
+import Foreign.Ptr
 
 type SType = (AST.Type, Bool)
 
 data Env = Env {decls :: [Decl],
                 objDefs :: M.Map Position ObjDef,
                 funDefs :: [FunDef],
-                funsWithBody :: M.Map String Bool,
+                funsWithBody :: M.Map String AST.Type,
                 enumerators :: [Enumerator],
                 typeDefs :: [TypeDef],
                 labels :: M.Map String BU.ByteString,
@@ -148,13 +155,24 @@ data Options = Options {toLLVM :: Bool, dumpLoc :: Bool, jit :: Bool}
 
 defaultOptions = Options {toLLVM = False, dumpLoc = False, jit = False}
 
+newtype AlignedStorable a = Aligned a
+deriving instance Num a => Num (AlignedStorable a)
+deriving instance Fractional a => Fractional (AlignedStorable a)
+deriving instance Show a => Show (AlignedStorable a)
+deriving instance Eq a => Eq (AlignedStorable a)
+deriving instance Ord a => Ord (AlignedStorable a)
+instance Storable a => Storable (AlignedStorable a) where
+  sizeOf        (Aligned x) = sizeOf x
+  alignment     (Aligned _) = 64
+  peek      ptr             = Aligned <$> peek (castPtr ptr)
+  poke      ptr (Aligned x) = poke (castPtr ptr) x
+
 -- | Translate c AST to MLIR
 translateToMLIR :: Options -> CTranslUnit -> IO String
 translateToMLIR opts tu =
    MLIR.withContext (\ctx -> do
      MLIR.registerAllDialects ctx
-     nativeOp <- fromAST ctx (mempty, mempty) $ do
-                   let res = runTrav initEnv $ do
+     let (ast, fs) = let res = runTrav initEnv $ do
                               -- record all kernels
                               recordKernelFunctions tu
                               -- analyze globals
@@ -169,10 +187,12 @@ translateToMLIR opts tu =
                               ds <- getUserState >>= mapM transGDecl . decls
                               -- generate a module
                               id <- freshName
-                              return $ AST.ModuleOp $ AST.Block id [] (join ds ++ fs)
-                   case res of
-                     Left errs -> error $ show errs
-                     Right (res, _) -> res
+                              fds <- funsWithBody <$> getUserState
+                              return (AST.ModuleOp $ AST.Block id [] (join ds ++ fs), fds)
+                   in case res of
+                       Left errs -> error $ show errs
+                       Right (res, _) -> res
+     nativeOp <- fromAST ctx (mempty, mempty) ast
      check <- if toLLVM opts then do
                 -- run passes to llvm ir
                 Just m <- MLIR.moduleFromOperation nativeOp
@@ -190,13 +210,38 @@ translateToMLIR opts tu =
      if jit opts then do
        -- run jit
        Just m <- MLIR.moduleFromOperation nativeOp
-       MLIR.withExecutionEngine m $ \(Just eng) -> do
-         MLIR.withStringRef "main" $ \name -> do
-           MLIR.executionEngineInvoke @() eng name []
-       return ""
+       evalContT $ do
+         let fn = "main"
+             ft = fs ^. at "main"
+             (inputSizes, outputSizes) =
+                case ft of
+                  Just ft -> case ft of
+                               (AST.FunctionType args results) ->
+                                 (map sizeOfType args, map sizeOfType results)
+                               _ -> ([], [])
+                  Nothing -> ([], [])
+             buffer size = do
+               vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN size (+1) (1 :: AlignedStorable Int8)
+               ptr <- ContT $ withForeignPtr fptr
+               structPtr <- ContT $ MLIR.packStruct64 [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr, MLIR.SomeStorable (0::Int64)]
+               return (MLIR.SomeStorable structPtr, vec)
+         inputs <- mapM buffer inputSizes
+         outputs <- mapM buffer outputSizes
+         (Just eng) <- ContT $ MLIR.withExecutionEngine m
+         name <- ContT $ MLIR.withStringRef fn
+         liftIO $ MLIR.executionEngineInvoke @() eng name (inputs ^..traverse._1 ++ outputs ^..traverse._1)
+         liftIO $ join <$> mapM (fmap show . V.unsafeFreeze) (outputs ^..traverse._2)
      else
        BU.toString <$> (if dumpLoc opts then MLIR.showOperationWithLocation
                         else MLIR.showOperation) nativeOp)
+
+sizeOfType :: AST.Type -> Int
+sizeOfType (AST.IntegerType _ s) = ceiling (fromIntegral s/8)
+sizeOfType AST.IndexType = 8
+sizeOfType AST.Float16Type = 2
+sizeOfType AST.Float32Type = 4
+sizeOfType AST.Float64Type = 8
+sizeOfType t = error "unsupported"
 
 -- | Add a jit wrapper for function
 emitted :: AST.Operation -> AST.Operation
@@ -240,7 +285,7 @@ transFunction f@(FunDef var stmt node) = do
   let (name, (ty, sign)) = varDecl (posOf node) var
       args = over (traverse . _1) BU.fromString $
                over (traverse . _2) fst $ params (posOf node) var
-  modifyUserState (\s -> s{funsWithBody=M.insert name True (funsWithBody s)})
+  modifyUserState (\s -> s{funsWithBody=M.insert name ty (funsWithBody s)})
   underScope $ do
     mapM_ (uncurry addVar) [(a ^._1, (BU.fromString $ a ^._1, a^._2, False)) | a <- params (posOf node) var]
     b <- transBlock args [] stmt []
