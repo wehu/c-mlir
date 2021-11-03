@@ -208,11 +208,14 @@ translateToMLIR opts tu =
                         map sizeOfType args ++ map sizeOfType results
                       _ -> []
                   Nothing -> []
-             buffer size = do
+             buffer (t, size) = do
                vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN size (+1) (1 :: Int8)
                ptr <- ContT $ withForeignPtr fptr
-               structPtr <- ContT $ MLIR.packStruct64 [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr, MLIR.SomeStorable (0::Int64)]
-               return (MLIR.SomeStorable structPtr, vec)
+               case t of
+                 AST.MemRefType {} -> do
+                   structPtr <- ContT $ MLIR.packStruct64 [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr, MLIR.SomeStorable (0::Int64)]
+                   return (MLIR.SomeStorable structPtr, vec)
+                 _ -> error "only support memref type in argument for jit"
          inputs <- mapM buffer argSizes
          (Just eng) <- ContT $ MLIR.withExecutionEngine m
          name <- ContT $ MLIR.withStringRef (BU.fromString fn)
@@ -222,14 +225,14 @@ translateToMLIR opts tu =
        BU.toString <$> (if dumpLoc opts then MLIR.showOperationWithLocation
                         else MLIR.showOperation) nativeOp)
 
-sizeOfType :: AST.Type -> Int
-sizeOfType (AST.IntegerType _ s) = ceiling (fromIntegral s/8)
-sizeOfType AST.IndexType = 8
-sizeOfType AST.Float16Type = 2
-sizeOfType AST.Float32Type = 4
-sizeOfType AST.Float64Type = 8
+sizeOfType :: AST.Type -> (AST.Type, Int)
+sizeOfType ty@(AST.IntegerType _ s) = (ty, ceiling (fromIntegral s/8))
+sizeOfType ty@AST.IndexType = (ty, 8)
+sizeOfType ty@AST.Float16Type = (ty, 2)
+sizeOfType ty@AST.Float32Type = (ty, 4)
+sizeOfType ty@AST.Float64Type = (ty, 8)
 -- sizeOfType AST.UnrankedMemRefType{} = 8*2
-sizeOfType (AST.MemRefType ds t _ _) = sizeOfType t * sum (ds ^..traverse._Just)
+sizeOfType ty@(AST.MemRefType ds t _ _) = (ty, sizeOfType t ^._2 * sum (ds ^..traverse._Just))
 sizeOfType t = error "unsupported"
 
 -- | Add a jit wrapper for function
