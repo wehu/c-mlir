@@ -208,12 +208,13 @@ translateToMLIR opts tu =
                         map sizeOfType args ++ map sizeOfType results
                       _ -> []
                   Nothing -> []
-             buffer (t, size) = do
+             buffer (t, size, n) = do
                vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN size (+1) (1 :: Int8)
                ptr <- ContT $ withForeignPtr fptr
                case t of
                  AST.MemRefType {} -> do
-                   structPtr <- ContT $ MLIR.packStruct64 [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr, MLIR.SomeStorable (0::Int64)]
+                   structPtr <- ContT $ MLIR.packStruct64 $
+                     [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr] ++ replicate n (MLIR.SomeStorable (0::Int64))
                    return (MLIR.SomeStorable structPtr, vec)
                  _ -> error "only support memref type in argument for jit"
          inputs <- mapM buffer argSizes
@@ -225,14 +226,15 @@ translateToMLIR opts tu =
        BU.toString <$> (if dumpLoc opts then MLIR.showOperationWithLocation
                         else MLIR.showOperation) nativeOp)
 
-sizeOfType :: AST.Type -> (AST.Type, Int)
-sizeOfType ty@(AST.IntegerType _ s) = (ty, ceiling (fromIntegral s/8))
-sizeOfType ty@AST.IndexType = (ty, 8)
-sizeOfType ty@AST.Float16Type = (ty, 2)
-sizeOfType ty@AST.Float32Type = (ty, 4)
-sizeOfType ty@AST.Float64Type = (ty, 8)
+sizeOfType :: AST.Type -> (AST.Type, Int, Int)
+sizeOfType ty@(AST.IntegerType _ s) = (ty, ceiling (fromIntegral s/8), 1)
+sizeOfType ty@AST.IndexType = (ty, 8, 1)
+sizeOfType ty@AST.Float16Type = (ty, 2, 1)
+sizeOfType ty@AST.Float32Type = (ty, 4, 1)
+sizeOfType ty@AST.Float64Type = (ty, 8, 1)
 sizeOfType ty@(AST.MemRefType ds t _ _) =
-  (ty, sizeOfType t ^._2 * product (ds ^..traverse._Just))
+  let size = product (ds ^..traverse._Just)
+   in (ty, sizeOfType t ^._2 * size, size)
 sizeOfType t = error "unsupported"
 
 -- | Add a jit wrapper for function
