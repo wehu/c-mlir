@@ -209,14 +209,16 @@ translateToMLIR opts tu =
                       _ -> []
                   Nothing -> []
              buffer (t, size, n) = do
-               vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN size (+1) (1 :: Int8)
-               ptr <- ContT $ withForeignPtr fptr
                case t of
                  AST.MemRefType {} -> do
+                   vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN size (+1) (1 :: Int8)
+                   ptr <- ContT $ withForeignPtr fptr
                    structPtr <- ContT $ MLIR.packStruct64 $
                      [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr] ++ replicate (2*n+1) (MLIR.SomeStorable (0::Int64))
                    return (MLIR.SomeStorable structPtr, vec)
-                 _ -> error "only support memref type in argument for jit"
+                 _ -> do
+                   vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN 0 (+1) (1 :: Int8)
+                   return (MLIR.SomeStorable (0::Int64), vec) -- error "only support memref type in argument for jit"
          inputs <- mapM buffer argSizes
          (Just eng) <- ContT $ MLIR.withExecutionEngine m
          name <- ContT $ MLIR.withStringRef (BU.fromString fn)
