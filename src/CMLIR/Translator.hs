@@ -232,7 +232,8 @@ sizeOfType ty@AST.Float16Type = (ty, 2)
 sizeOfType ty@AST.Float32Type = (ty, 4)
 sizeOfType ty@AST.Float64Type = (ty, 8)
 -- sizeOfType AST.UnrankedMemRefType{} = 8*2
-sizeOfType ty@(AST.MemRefType ds t _ _) = (ty, sizeOfType t ^._2 * sum (ds ^..traverse._Just))
+sizeOfType ty@(AST.MemRefType ds t _ _) =
+  (ty, sizeOfType t ^._2 * product (ds ^..traverse._Just))
 sizeOfType t = error "unsupported"
 
 -- | Add a jit wrapper for function
