@@ -231,7 +231,6 @@ sizeOfType ty@AST.IndexType = (ty, 8)
 sizeOfType ty@AST.Float16Type = (ty, 2)
 sizeOfType ty@AST.Float32Type = (ty, 4)
 sizeOfType ty@AST.Float64Type = (ty, 8)
--- sizeOfType AST.UnrankedMemRefType{} = 8*2
 sizeOfType ty@(AST.MemRefType ds t _ _) =
   (ty, sizeOfType t ^._2 * product (ds ^..traverse._Just))
 sizeOfType t = error "unsupported"
@@ -330,6 +329,7 @@ transLocalDecl (ObjDef var init node) = do
   initBs <- mapM transInit init
   let (n, t) = varDecl (posOf node) var
       mt = case t of
+             (t@(AST.MemRefType [Nothing] _ _ _), _) -> AST.MemRefType [Just 1] t Nothing Nothing
              (t@AST.MemRefType{}, _) -> t
              (t, _) -> AST.MemRefType [Just 1] t Nothing Nothing
       alloc = MemRef.alloca (getPos node) mt [] []
@@ -520,22 +520,19 @@ transExpr (CAssign op lhs rhs node) = do
     let indexIds = map lastId (indexBs ^.. traverse . _1)
     toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
     let (dstTy, sign) = case ty of
+                  (AST.MemRefType [Nothing] ty _ _, sign) -> (ty, sign)
                   (AST.MemRefType _ ty _ _, sign) -> (ty, sign)
-                  (AST.UnrankedMemRefType ty _, sign) -> (ty, sign)
                   _ -> unsupported (posOf src) src
 
     id0 <- freshName
     id1 <- freshName
-    id2 <- freshName
     let st = case ty of
-               (ty@(AST.UnrankedMemRefType _ ms), _) ->
+               (ty@(AST.MemRefType [Nothing] _ _ ms), _) ->
                  if isLocal
                  then [Left $ id0 AST.:= constIndex0 (getPos node)
                       ,Left $ id1 AST.:= (MemRef.Load ty id [id0]){AST.opLocation = getPos node}
-                      ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing (Just ms)) id1
-                      ,Left $ AST.Do $ (MemRef.Store rhsId id2 (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
-                 else [Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] dstTy Nothing (Just ms)) id
-                      ,Left $ AST.Do $ (MemRef.Store rhsId id2 (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
+                      ,Left $ AST.Do $ (MemRef.Store rhsId id1 (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
+                 else [Left $ AST.Do $ (MemRef.Store rhsId id (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
                _ -> [Left $ AST.Do $ (MemRef.Store rhsId id (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
     return (srcBs ++ rhsBs ++ join (indexBs ^.. traverse . _1) ++
             toIndices ^.. traverse . _1 ++ st, (dstTy, sign))
@@ -601,22 +598,19 @@ transExpr (CIndex e index node) = do
   let indexIds = map lastId (indexBs ^.. traverse . _1)
   toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
   let ty = case srcTy of
+             AST.MemRefType [Nothing] ty _ _ -> ty
              AST.MemRefType _ ty _ _ -> ty
-             AST.UnrankedMemRefType ty _ -> ty
              _ -> unsupported (posOf src) src
   id <- freshName
   id0 <- freshName
   id1 <- freshName
-  id2 <- freshName
   let ld = case srcTy of
-             AST.UnrankedMemRefType ty ms ->
+             AST.MemRefType [Nothing] ty _ ms ->
                if isLocal
                then [Left $ id0 AST.:= constIndex0 (getPos node)
                     ,Left $ id1 AST.:= (MemRef.Load srcTy srcId [id0]){AST.opLocation=getPos node}
-                    ,Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing (Just ms)) id1
-                    ,Left $ id AST.:= (MemRef.Load ty id2 (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
-               else [Left $ id2 AST.:= MemRef.cast (getPos node) (AST.MemRefType [Nothing] ty Nothing (Just ms)) srcId
-                    ,Left $ id AST.:= (MemRef.Load ty id2 (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
+                    ,Left $ id AST.:= (MemRef.Load ty id1 (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
+               else [Left $ id AST.:= (MemRef.Load ty srcId (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
              _ -> [Left $ id AST.:= (MemRef.Load ty srcId (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
   return (srcBs ++ join (indexBs ^.. traverse . _1) ++
           toIndices ^.. traverse . _1 ++ ld ++ [Right id], (ty, sign))
@@ -663,7 +657,6 @@ transExpr c@(CCast t e node) = do
                      _ -> False
         isMemref ty = case ty of
                         AST.MemRefType{} -> True
-                        AST.UnrankedMemRefType{} -> True
                         _ -> False
         bits ty = case ty of
                     AST.Float16Type -> 16
@@ -730,14 +723,12 @@ transExpr (CUnary CIndOp e node) = do
   (eBs, (eTy, eSign)) <- transExpr e
   id <- freshName
   id0 <- freshName
-  id1 <- freshName
   let loc = getPos node
       (resTy, ms) = case eTy of
-                AST.UnrankedMemRefType t ms -> (t, ms)
+                AST.MemRefType [Nothing] t _ ms -> (t, ms)
                 _ -> unsupported (posOf node) e
       bs = [Left $ id0 AST.:= constIndex0 loc
-           ,Left $ id1 AST.:= MemRef.cast loc (AST.MemRefType [Nothing] resTy Nothing (Just ms)) (lastId eBs)
-           ,Left $ id AST.:= (MemRef.Load resTy id1 [id0]){AST.opLocation = loc}]
+           ,Left $ id AST.:= (MemRef.Load resTy (lastId eBs) [id0]){AST.opLocation = loc}]
   return (eBs ++ bs ++ [Right id], (resTy, eSign))
 transExpr e = unsupported (posOf e) e
 
@@ -862,7 +853,7 @@ type_ pos ms ty@(DirectType name quals attrs) =
     _ -> unsupported pos ty
 type_ pos ms ty@(PtrType t quals attrs) =
   let (tt, sign) = type_ pos ms t
-   in (AST.UnrankedMemRefType tt (AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms), sign)
+   in (AST.MemRefType [Nothing] tt Nothing (Just $ AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms), sign)
 type_ pos ms (ArrayType t size quals attrs) =
   let s = arraySize size
       msAttr = AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms

@@ -1118,14 +1118,13 @@ void foo() {
       |] `shouldBeTranslatedAs` [r|
 module  {
   func @foo() attributes {llvm.emit_c_interface} {
-    %0 = memref.alloca() : memref<1xmemref<*xi32>>
+    %0 = memref.alloca() : memref<1xmemref<?xi32>>
     %c0 = arith.constant 0 : index
-    %1 = memref.load %0[%c0] : memref<1xmemref<*xi32>>
+    %1 = memref.load %0[%c0] : memref<1xmemref<?xi32>>
     %c0_0 = arith.constant 0 : index
-    %2 = memref.cast %1 : memref<*xi32> to memref<?xi32>
-    %3 = memref.load %2[%c0_0] : memref<?xi32>
+    %2 = memref.load %1[%c0_0] : memref<?xi32>
     %c1_i32 = arith.constant 1 : i32
-    %4 = arith.addi %3, %c1_i32 : i32
+    %3 = arith.addi %2, %c1_i32 : i32
     return
   }
 }
@@ -1140,19 +1139,17 @@ void foo() {
       |] `shouldBeTranslatedAs` [r|
 module  {
   func @foo() attributes {llvm.emit_c_interface} {
-    %0 = memref.alloca() : memref<1xmemref<*xi32>>
+    %0 = memref.alloca() : memref<1xmemref<?xi32>>
     %c1_i32 = arith.constant 1 : i32
     %1 = arith.index_cast %c1_i32 : i32 to index
     %c0 = arith.constant 0 : index
-    %2 = memref.load %0[%c0] : memref<1xmemref<*xi32>>
-    %3 = memref.cast %2 : memref<*xi32> to memref<?xi32>
-    %4 = memref.load %3[%1] : memref<?xi32>
+    %2 = memref.load %0[%c0] : memref<1xmemref<?xi32>>
+    %3 = memref.load %2[%1] : memref<?xi32>
     %c0_i32 = arith.constant 0 : i32
-    %5 = arith.index_cast %c0_i32 : i32 to index
+    %4 = arith.index_cast %c0_i32 : i32 to index
     %c0_0 = arith.constant 0 : index
-    %6 = memref.load %0[%c0_0] : memref<1xmemref<*xi32>>
-    %7 = memref.cast %6 : memref<*xi32> to memref<?xi32>
-    memref.store %4, %7[%5] : memref<?xi32>
+    %5 = memref.load %0[%c0_0] : memref<1xmemref<?xi32>>
+    memref.store %3, %5[%4] : memref<?xi32>
     return
   }
 }
@@ -1167,10 +1164,10 @@ void foo() {
       |] `shouldBeTranslatedAs` [r|
 module  {
   func @foo() attributes {llvm.emit_c_interface} {
-    %0 = memref.alloca() : memref<1xmemref<*xi32>>
+    %0 = memref.alloca() : memref<1xmemref<?xi32>>
     %c0 = arith.constant 0 : index
-    %1 = memref.load %0[%c0] : memref<1xmemref<*xi32>>
-    %2 = memref.cast %1 : memref<*xi32> to memref<3xi32>
+    %1 = memref.load %0[%c0] : memref<1xmemref<?xi32>>
+    %2 = memref.cast %1 : memref<?xi32> to memref<3xi32>
     return
   }
 }
@@ -1213,20 +1210,18 @@ void foo(float* input) {
 }
       |] `shouldBeTranslatedAs` [r|
 module  {
-  func @foo(%arg0: memref<*xf32>) attributes {llvm.emit_c_interface} {
+  func @foo(%arg0: memref<?xf32>) attributes {llvm.emit_c_interface} {
     %0 = memref.alloca() : memref<100xf32>
     affine.for %arg1 = 0 to 100 {
       %1 = arith.index_cast %arg1 : index to i32
       %2 = arith.index_cast %1 : i32 to index
       %3 = memref.load %0[%2] : memref<100xf32>
       %4 = arith.index_cast %1 : i32 to index
-      %5 = memref.cast %arg0 : memref<*xf32> to memref<?xf32>
-      memref.store %3, %5[%4] : memref<?xf32>
-      %6 = arith.index_cast %1 : i32 to index
-      %7 = memref.cast %arg0 : memref<*xf32> to memref<?xf32>
-      %8 = memref.load %7[%6] : memref<?xf32>
-      %9 = arith.index_cast %1 : i32 to index
-      memref.store %8, %0[%9] : memref<100xf32>
+      memref.store %3, %arg0[%4] : memref<?xf32>
+      %5 = arith.index_cast %1 : i32 to index
+      %6 = memref.load %arg0[%5] : memref<?xf32>
+      %7 = arith.index_cast %1 : i32 to index
+      memref.store %6, %0[%7] : memref<100xf32>
     }
     return
   }
@@ -1243,21 +1238,17 @@ __kernel void foo(__global float* input, __local float *a) {
 }
       |] `shouldBeTranslatedAs` [r|
 module  {
-  func @foo(%arg0: memref<*xf32, 2>, %arg1: memref<*xf32, 1>) attributes {cl.kernel = true, llvm.emit_c_interface} {
+  func @foo(%arg0: memref<?xf32, 2>, %arg1: memref<?xf32, 1>) attributes {cl.kernel = true, llvm.emit_c_interface} {
     affine.for %arg2 = 0 to 100 {
       %0 = arith.index_cast %arg2 : index to i32
       %1 = arith.index_cast %0 : i32 to index
-      %2 = memref.cast %arg1 : memref<*xf32, 1> to memref<?xf32, 1>
-      %3 = memref.load %2[%1] : memref<?xf32, 1>
+      %2 = memref.load %arg1[%1] : memref<?xf32, 1>
+      %3 = arith.index_cast %0 : i32 to index
+      memref.store %2, %arg0[%3] : memref<?xf32, 2>
       %4 = arith.index_cast %0 : i32 to index
-      %5 = memref.cast %arg0 : memref<*xf32, 2> to memref<?xf32, 2>
-      memref.store %3, %5[%4] : memref<?xf32, 2>
+      %5 = memref.load %arg0[%4] : memref<?xf32, 2>
       %6 = arith.index_cast %0 : i32 to index
-      %7 = memref.cast %arg0 : memref<*xf32, 2> to memref<?xf32, 2>
-      %8 = memref.load %7[%6] : memref<?xf32, 2>
-      %9 = arith.index_cast %0 : i32 to index
-      %10 = memref.cast %arg1 : memref<*xf32, 1> to memref<?xf32, 1>
-      memref.store %8, %10[%9] : memref<?xf32, 1>
+      memref.store %5, %arg1[%6] : memref<?xf32, 1>
     }
     return
   }
