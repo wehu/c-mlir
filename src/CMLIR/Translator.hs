@@ -173,6 +173,7 @@ translateToMLIR opts tu =
                      Left errs -> error $ show errs
                      Right (res, _) -> res
      check <- if toLLVM opts then do
+                -- run passes to llvm ir
                 Just m <- MLIR.moduleFromOperation nativeOp
                 MLIR.withPassManager ctx $ \pm -> do
                   MLIR.addConvertAffineToStandardPass pm
@@ -186,17 +187,20 @@ translateToMLIR opts tu =
      --MLIR.dump nativeOp
      unless check $ exitWith (ExitFailure 1)
      if jit opts then do
+       -- run jit
        Just m <- MLIR.moduleFromOperation nativeOp
        MLIR.withExecutionEngine m $ \(Just eng) -> do
          MLIR.withStringRef "main" $ \name -> do
            MLIR.executionEngineInvoke @() eng name []
        return ""
      else  
-       BU.toString <$> (if (dumpLoc opts) then MLIR.showOperationWithLocation
+       BU.toString <$> (if dumpLoc opts then MLIR.showOperationWithLocation
                         else MLIR.showOperation) nativeOp)
 
+-- | Add a jit wrapper for function
 emitted :: AST.Operation -> AST.Operation
-emitted op = op { AST.opAttributes = AST.opAttributes op <> AST.namedAttribute "llvm.emit_c_interface" AST.UnitAttr }
+emitted op = op { AST.opAttributes = AST.opAttributes op <> 
+                  AST.namedAttribute "llvm.emit_c_interface" AST.UnitAttr }
 
 -- | Add enums
 addEnum :: Enumerator -> EnvM ()
