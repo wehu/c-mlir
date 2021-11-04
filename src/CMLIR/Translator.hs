@@ -486,13 +486,17 @@ transExpr (CVar ident node) = do
     Nothing -> do
       (id, (ty, sign), isLocal) <- lookupVar name
       if isLocal then do
-        id0 <- freshName
-        let c = constIndex0 (getPos node)
-            op0 = id0 AST.:= c
-        id1 <- freshName
-        let ld = MemRef.Load ty id [id0]
-            op1 = id1 AST.:= ld{AST.opLocation = getPos node}
-        return ([Left op0, Left op1, Right id1], (ty, sign))
+        case ty of
+          AST.MemRefType ds _ _ _ | ds /= [Nothing] ->
+            return ([Right id], (ty, sign))
+          _ -> do
+            id0 <- freshName
+            let c = constIndex0 (getPos node)
+                op0 = id0 AST.:= c
+            id1 <- freshName
+            let ld = MemRef.Load ty id [id0]
+                op1 = id1 AST.:= ld{AST.opLocation = getPos node}
+            return ([Left op0, Left op1, Right id1], (ty, sign))
       else return ([Right id], (ty, sign))
 transExpr (CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
