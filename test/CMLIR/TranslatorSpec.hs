@@ -1021,6 +1021,25 @@ module  {
   }
 }
       |]
+
+    it "can translate pointer assign" $ do
+      [r|
+void foo() {
+  char *a;
+  char *b;
+  a = b;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<memref<?xi8>>
+    %1 = memref.alloca() : memref<memref<?xi8>>
+    %2 = memref.load %1[] : memref<memref<?xi8>>
+    memref.store %2, %0[] : memref<memref<?xi8>>
+    return
+  }
+}
+      |]
   
     it "can translate pointer casting" $ do
       [r|

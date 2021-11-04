@@ -501,10 +501,10 @@ transExpr (CVar ident node) = do
       else return ([Right id], (ty, sign))
 transExpr (CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
-  (id, ty, srcBs, isLocal) <- case src of
-                       CVar ident _ -> (\(a, b, c) -> (a, b, [], c)) <$> lookupVar (identName ident)
-                       (CUnary CIndOp e node) | null indices -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr e
-                       _ -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr src
+  (id, ty, srcBs, isLocal, isDeref) <- case src of
+                       CVar ident _ -> (\(a, b, c) -> (a, b, [], c, False)) <$> lookupVar (identName ident)
+                       (CUnary CIndOp e node) | null indices -> (\(a, b) -> (lastId a, b, a, False, True)) <$> transExpr e
+                       _ -> (\(a, b) -> (lastId a, b, a, False, True)) <$> transExpr src
   (rhsBs, rhsTy) <- transExpr (case op of
                       CAssignOp -> rhs
                       CMulAssOp -> CBinary CMulOp lhs rhs node
@@ -520,13 +520,8 @@ transExpr (CAssign op lhs rhs node) = do
   let rhsId = lastId rhsBs
   if null indices then do
     id0 <- freshName
-    let c0 = case ty of
-               (ty@(AST.MemRefType [Nothing] _ _ ms), _) ->
-                  [Left $ id0 AST.:= constIndex0 (getPos node)]
-               _ -> []
-        st = MemRef.Store rhsId id (case ty of
-                                      (ty@(AST.MemRefType [Nothing] _ _ ms), _) -> [id0]
-                                      _ -> [])
+    let c0 = [Left $ id0 AST.:= constIndex0 (getPos node) | isDeref]
+        st = MemRef.Store rhsId id [id0 | isDeref]
         op1 = AST.Do st{AST.opLocation = getPos node}
     return (srcBs ++ rhsBs ++ c0 ++ [Left op1], ty)
   else do
