@@ -498,7 +498,7 @@ transExpr (CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
   (id, ty, srcBs, isLocal) <- case src of
                        CVar ident _ -> (\(a, b, c) -> (a, b, [], c)) <$> lookupVar (identName ident)
-                       (CUnary CIndOp e node) -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr e
+                       (CUnary CIndOp e node) | null indices -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr e
                        _ -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr src
   (rhsBs, rhsTy) <- transExpr (case op of
                       CAssignOp -> rhs
