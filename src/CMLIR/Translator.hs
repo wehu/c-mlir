@@ -521,7 +521,8 @@ transExpr (CAssign op lhs rhs node) = do
   if null indices then do
     id0 <- freshName
     let c0 = case ty of
-               (ty@(AST.MemRefType [Nothing] _ _ ms), _) -> [Left $ id0 AST.:= constIndex0 (getPos node)]
+               (ty@(AST.MemRefType [Nothing] _ _ ms), _) ->
+                  [Left $ id0 AST.:= constIndex0 (getPos node)]
                _ -> []
         st = MemRef.Store rhsId id (case ty of
                                       (ty@(AST.MemRefType [Nothing] _ _ ms), _) -> [id0]
