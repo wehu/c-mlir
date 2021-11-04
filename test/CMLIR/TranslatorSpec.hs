@@ -1317,3 +1317,22 @@ module  {
   }
 }
       |]
+    
+    it "can translate array to pointer casting" $ do
+      [r|
+void foo() {
+  char b[10];
+  char *c = (char *)b;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<10xi8>
+    %1 = memref.cast %0 : memref<10xi8> to memref<?xi8>
+    %2 = memref.alloca() : memref<1xmemref<?xi8>>
+    %c0 = arith.constant 0 : index
+    memref.store %1, %2[%c0] : memref<1xmemref<?xi8>>
+    return
+  }
+}
+      |]
