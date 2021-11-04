@@ -333,16 +333,20 @@ transLocalDecl (ObjDef var init node) = do
   initBs <- mapM transInit init
   let (n, t) = varDecl (posOf node) var
       mt = case t of
-             (t@(AST.MemRefType [Nothing] _ _ _), _) -> AST.MemRefType [Just 1] t Nothing Nothing
+             (t@(AST.MemRefType [Nothing] _ _ _), _) -> AST.MemRefType [] t Nothing Nothing
              (t@AST.MemRefType{}, _) -> t
-             (t, _) -> AST.MemRefType [Just 1] t Nothing Nothing
+             (t, _) -> AST.MemRefType [] t Nothing Nothing
       alloc = MemRef.alloca (getPos node) mt [] []
       b = Left $ id AST.:= alloc
   st <- if isn't _Nothing initBs then do
           (^._1) <$> foldM (\(s, index) initBs -> do
                        id0 <- freshName
                        return (s++[Left $ id0 AST.:= constInt (getPos node) AST.IndexType index
-                                  ,Left $ AST.Do $ (MemRef.Store (lastId initBs) id [id0]){AST.opLocation=getPos node}], index+1))
+                                  ,Left $ AST.Do $ (MemRef.Store (lastId initBs) id
+                                                     (case mt of
+                                                       AST.MemRefType [] t Nothing Nothing -> []
+                                                       _ -> [id0])){
+                                    AST.opLocation=getPos node}], index+1))
                        ([], 0::Int)
                       (fromJust initBs)
         else return []
@@ -490,13 +494,10 @@ transExpr (CVar ident node) = do
           AST.MemRefType ds _ _ _ | ds /= [Nothing] ->
             return ([Right id], (ty, sign))
           _ -> do
-            id0 <- freshName
-            let c = constIndex0 (getPos node)
-                op0 = id0 AST.:= c
             id1 <- freshName
-            let ld = MemRef.Load ty id [id0]
+            let ld = MemRef.Load ty id []
                 op1 = id1 AST.:= ld{AST.opLocation = getPos node}
-            return ([Left op0, Left op1, Right id1], (ty, sign))
+            return ([Left op1, Right id1], (ty, sign))
       else return ([Right id], (ty, sign))
 transExpr (CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
@@ -519,11 +520,14 @@ transExpr (CAssign op lhs rhs node) = do
   let rhsId = lastId rhsBs
   if null indices then do
     id0 <- freshName
-    let c = constIndex0 (getPos node)
-        op0 = id0 AST.:= c
-    let st = MemRef.Store rhsId id [id0]
+    let c0 = case ty of
+               (ty@(AST.MemRefType [Nothing] _ _ ms), _) -> [Left $ id0 AST.:= constIndex0 (getPos node)]
+               _ -> []
+        st = MemRef.Store rhsId id (case ty of
+                                      (ty@(AST.MemRefType [Nothing] _ _ ms), _) -> [id0]
+                                      _ -> [])
         op1 = AST.Do st{AST.opLocation = getPos node}
-    return (srcBs ++ rhsBs ++ [Left op0, Left op1], ty)
+    return (srcBs ++ rhsBs ++ c0 ++ [Left op1], ty)
   else do
     indexBs <- mapM transExpr indices
     let indexIds = map lastId (indexBs ^.. traverse . _1)
@@ -532,14 +536,11 @@ transExpr (CAssign op lhs rhs node) = do
                   (AST.MemRefType [Nothing] ty _ _, sign) -> (ty, sign)
                   (AST.MemRefType _ ty _ _, sign) -> (ty, sign)
                   _ -> unsupported (posOf src) src
-
-    id0 <- freshName
     id1 <- freshName
     let st = case ty of
-               (ty@(AST.MemRefType [Nothing] _ _ ms), _) ->
+               (ty@(AST.MemRefType [Nothing] _ _ ms), _) -> do
                  if isLocal
-                 then [Left $ id0 AST.:= constIndex0 (getPos node)
-                      ,Left $ id1 AST.:= (MemRef.Load ty id [id0]){AST.opLocation = getPos node}
+                 then [Left $ id1 AST.:= (MemRef.Load ty id []){AST.opLocation = getPos node}
                       ,Left $ AST.Do $ (MemRef.Store rhsId id1 (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
                  else [Left $ AST.Do $ (MemRef.Store rhsId id (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
                _ -> [Left $ AST.Do $ (MemRef.Store rhsId id (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
@@ -611,13 +612,11 @@ transExpr (CIndex e index node) = do
              AST.MemRefType _ ty _ _ -> ty
              _ -> unsupported (posOf src) src
   id <- freshName
-  id0 <- freshName
   id1 <- freshName
   let ld = case srcTy of
              AST.MemRefType [Nothing] ty _ ms ->
                if isLocal
-               then [Left $ id0 AST.:= constIndex0 (getPos node)
-                    ,Left $ id1 AST.:= (MemRef.Load srcTy srcId [id0]){AST.opLocation=getPos node}
+               then [Left $ id1 AST.:= (MemRef.Load srcTy srcId []){AST.opLocation=getPos node}
                     ,Left $ id AST.:= (MemRef.Load ty id1 (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
                else [Left $ id AST.:= (MemRef.Load ty srcId (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
              _ -> [Left $ id AST.:= (MemRef.Load ty srcId (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
