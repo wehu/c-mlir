@@ -671,14 +671,27 @@ transExpr c@(CCast t e node) = do
                     _ -> unsupported (posOf c) c
 transExpr (CCall (CVar ident _) args node) = do
   let name = identName ident
-  (_, (ty, sign), _) <- lookupVar name
-  let resTy = case ty of
-                AST.FunctionType _ [resTy] -> resTy
-                _ -> error "expected a function type"
-  id <- freshName
+      loc = getPos node
   argsBs <- mapM transExpr args
-  let call = id AST.:= Std.call (getPos node) resTy (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
-  return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (resTy, sign))
+  id <- freshName
+  case name of
+    "malloc" -> do
+      let resTy = AST.MemRefType [Nothing] (AST.IntegerType AST.Signless 8) Nothing Nothing
+          (sizeB, (sizeTy, sizeSign)) = head argsBs
+      (toB, toId) <- toIndex loc (lastId sizeB) sizeTy
+      let malloc = id AST.:= MemRef.alloc loc resTy [toId] []
+      return (join (argsBs ^..traverse._1) ++ [toB] ++ [Left malloc, Right id], (resTy, sizeSign))
+    "free" -> do
+      let (mB, (mTy, mSign)) = head argsBs
+          free = AST.Do $ MemRef.dealloc loc (lastId mB)
+      return (join (argsBs ^..traverse._1) ++ [Left free], (mTy, mSign))
+    _ -> do
+      (_, (ty, sign), _) <- lookupVar name
+      let resTy = case ty of
+                    AST.FunctionType _ [resTy] -> resTy
+                    _ -> error "expected a function type"
+      let call = id AST.:= Std.call loc resTy (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
+      return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (resTy, sign))
 transExpr (CUnary CPreIncOp e node) = do
   let const1 = CConst (CIntConst (cInteger 1) node)
   (incBs, _) <- transExpr (CAssign CAddAssOp e const1 node)

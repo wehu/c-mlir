@@ -18,6 +18,30 @@ alloca loc ty dyns syms = Operation
                          DenseUInt32 $ listArray (0 :: Int, 1) $ fromIntegral <$> [length dyns, length syms]
   }
 
+alloc :: Location -> Type -> [Name] -> [Name] -> Operation
+alloc loc ty dyns syms = Operation
+  { opName = "memref.alloc"
+  , opLocation = loc
+  , opResultTypes = Explicit [ty]
+  , opOperands = dyns ++ syms
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = namedAttribute "operand_segment_sizes" $
+                       DenseElementsAttr (VectorType [2] $ IntegerType Unsigned 32) $
+                         DenseUInt32 $ listArray (0 :: Int, 1) $ fromIntegral <$> [length dyns, length syms]
+  }
+
+dealloc :: Location -> Name -> Operation
+dealloc loc src = Operation
+  { opName = "memref.dealloc"
+  , opLocation = loc
+  , opResultTypes = Explicit []
+  , opOperands = [src]
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = NoAttrs
+  }
+
 cast :: Location -> Type -> Name -> Operation
 cast loc ty src = Operation
   { opName = "memref.cast"

@@ -1294,3 +1294,26 @@ module  {
   }
 }
       |]
+
+    it "can translate malloc/free" $ do
+      [r|
+void foo() {
+  char *v = malloc(10);
+  free(v);
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %c10_i32 = arith.constant 10 : i32
+    %0 = arith.index_cast %c10_i32 : i32 to index
+    %1 = memref.alloc(%0) : memref<?xi8>
+    %2 = memref.alloca() : memref<1xmemref<?xi8>>
+    %c0 = arith.constant 0 : index
+    memref.store %1, %2[%c0] : memref<1xmemref<?xi8>>
+    %c0_0 = arith.constant 0 : index
+    %3 = memref.load %2[%c0_0] : memref<1xmemref<?xi8>>
+    memref.dealloc %3 : memref<?xi8>
+    return
+  }
+}
+      |]
