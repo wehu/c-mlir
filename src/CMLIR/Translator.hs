@@ -150,9 +150,9 @@ fromIndex loc i dstTy =
   if dstTy == AST.IndexType then return (Right i, i)
   else (\id -> (Left $ id AST.:= Arith.IndexCast loc dstTy i, id)) <$> freshName
 
-data Options = Options {toLLVM :: Bool, dumpLoc :: Bool, jit :: Bool}
+data Options = Options {toLLVM :: Bool, dumpLoc :: Bool, jits :: [String]}
 
-defaultOptions = Options {toLLVM = False, dumpLoc = False, jit = False}
+defaultOptions = Options {toLLVM = False, dumpLoc = False, jits = []}
 
 -- | Translate c AST to MLIR
 translateToMLIR :: Options -> CTranslUnit -> IO String
@@ -194,36 +194,36 @@ translateToMLIR opts tu =
               else MLIR.verifyOperation nativeOp
      --MLIR.dump nativeOp
      unless check $ exitWith (ExitFailure 1)
-     if jit opts then do
+     if not . null $ jits opts then do
        -- run jit
-       Just m <- MLIR.moduleFromOperation nativeOp
-       evalContT $ do
-         let fn = "main" :: String
-             ft = fs ^. at fn
-             argSizes =
-                case ft of
-                  Just ft ->
-                    case ft of
-                      (AST.FunctionType args results) ->
-                        map sizeOfType args ++ map sizeOfType results
-                      _ -> []
-                  Nothing -> []
-             buffer (t, size, n) = do
-               case t of
-                 AST.MemRefType {} -> do
-                   vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN size (+1) (1 :: Int8)
-                   ptr <- ContT $ withForeignPtr fptr
-                   structPtr <- ContT $ MLIR.packStruct64 $
-                     [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr] ++ replicate (2*n+1) (MLIR.SomeStorable (0::Int64))
-                   return (MLIR.SomeStorable structPtr, vec)
-                 _ -> do
-                   vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN 0 (+1) (1 :: Int8)
-                   return (MLIR.SomeStorable (0::Int64), vec) -- error "only support memref type in argument for jit"
-         inputs <- mapM buffer argSizes
-         (Just eng) <- ContT $ MLIR.withExecutionEngine m
-         name <- ContT $ MLIR.withStringRef (BU.fromString fn)
-         (Just ()) <- liftIO $ MLIR.executionEngineInvoke @() eng name (inputs ^..traverse._1)
-         liftIO $ join <$> mapM (fmap show . V.unsafeFreeze) (inputs ^..traverse._2)
+       join <$> forM (jits opts) (\fn -> do
+         Just m <- MLIR.moduleFromOperation nativeOp
+         evalContT $ do
+           let ft = fs ^. at fn
+               argSizes =
+                  case ft of
+                    Just ft ->
+                      case ft of
+                        (AST.FunctionType args results) ->
+                          map sizeOfType args ++ map sizeOfType results
+                        _ -> []
+                    Nothing -> []
+               buffer (t, size, n) = do
+                 case t of
+                   AST.MemRefType {} -> do
+                     vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN size (+1) (1 :: Int8)
+                     ptr <- ContT $ withForeignPtr fptr
+                     structPtr <- ContT $ MLIR.packStruct64 $
+                       [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr] ++ replicate (2*n+1) (MLIR.SomeStorable (0::Int64))
+                     return (MLIR.SomeStorable structPtr, vec)
+                   _ -> do
+                     vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN 0 (+1) (1 :: Int8)
+                     return (MLIR.SomeStorable (0::Int64), vec) -- error "only support memref type in argument for jit"
+           inputs <- mapM buffer argSizes
+           (Just eng) <- ContT $ MLIR.withExecutionEngine m
+           name <- ContT $ MLIR.withStringRef (BU.fromString fn)
+           (Just ()) <- liftIO $ MLIR.executionEngineInvoke @() eng name (inputs ^..traverse._1)
+           liftIO $ join <$> mapM (fmap show . V.unsafeFreeze) (inputs ^..traverse._2))
      else
        BU.toString <$> (if dumpLoc opts then MLIR.showOperationWithLocation
                         else MLIR.showOperation) nativeOp)

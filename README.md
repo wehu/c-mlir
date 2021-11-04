@@ -92,5 +92,5 @@ stack run -- test.c -loc
 
 Jit run
 ```shell
-stack run -- test.c -jit
+stack run -- test.c -jit=func_name
 ```

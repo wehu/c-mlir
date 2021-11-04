@@ -14,9 +14,10 @@ specialOpts = ["-jit", "-llvm", "-loc"]
 translate :: IO ()
 translate =
   do args <- getArgs
-     let (cppOpts, files) = partition (isPrefixOf "-") args
-         trOpts = defaultOptions{toLLVM = "-llvm" `elem` cppOpts || "-jit" `elem` cppOpts,
+     let (cppOpts', files) = partition (isPrefixOf "-") args
+         (jits, cppOpts) = partition (isPrefixOf "-jit=") cppOpts'
+         trOpts = defaultOptions{toLLVM = "-llvm" `elem` cppOpts || not (null jits),
                                  dumpLoc = "-loc" `elem` cppOpts,
-                                 jit = "-jit" `elem` cppOpts} 
+                                 jits = map (drop 5) jits} 
      mapM_ (\file -> processFile (cppOpts \\ specialOpts) file
        >>= translateToMLIR trOpts >>= putStrLn) files
