@@ -382,12 +382,21 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                                 Just (CInitExpr lb@(CConst _) _),
                                 Nothing)] _))
                 (Just (CBinary CLeOp (CVar ident1 _) ub@(CConst _) _))
-                (Just (CAssign CAddAssOp (CVar ident2 _) step@(CConst _) _))
+                (Just stepE)
                 body node)
   -- try to translate for to affine.for
-  | ident0 == ident1 && ident1 == ident2 = do
+  | ident0 == ident1 && 
+    (case stepE of
+      (CAssign CAddAssOp (CVar ident2 _) step _) -> ident1 == ident2
+      (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp -> ident1 == ident2
+      _ -> False) = do
   let name = identName ident0
       loc = getPos node
+      step = case stepE of
+              (CAssign CAddAssOp (CVar ident2 _) step _) -> step
+              (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp ->
+                CConst (CIntConst (cInteger 1) node)
+              _ -> unsupported (posOf stepE) stepE
   b <- underScope $ do
     let varName = BU.fromString name
         ty = AST.IntegerType AST.Signless 32
@@ -409,12 +418,21 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                                 Just (CInitExpr lb _),
                                 Nothing)] _))
                 (Just (CBinary CLeOp (CVar ident1 _) ub _))
-                (Just (CAssign CAddAssOp (CVar ident2 _) step _))
+                (Just stepE)
                 body node)
   -- try to translate for to scf.for
-  | ident0 == ident1 && ident1 == ident2 = do
+  | ident0 == ident1 && 
+    (case stepE of
+      (CAssign CAddAssOp (CVar ident2 _) step _) -> ident1 == ident2
+      (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp -> ident1 == ident2
+      _ -> False) = do
   let name = identName ident0
       loc = getPos node
+      step = case stepE of
+              (CAssign CAddAssOp (CVar ident2 _) step _) -> step
+              (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp ->
+                CConst (CIntConst (cInteger 1) node)
+              _ -> unsupported (posOf stepE) stepE
   b <- underScope $ do
     let varName = BU.fromString name
         ty = AST.IntegerType AST.Signless 32
