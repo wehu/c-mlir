@@ -150,9 +150,9 @@ fromIndex loc i dstTy =
   if dstTy == AST.IndexType then return (Right i, i)
   else (\id -> (Left $ id AST.:= Arith.IndexCast loc dstTy i, id)) <$> freshName
 
-data Options = Options {toLLVM :: Bool, dumpLoc :: Bool, jits :: [String]}
+data Options = Options {toLLVM :: Bool, dumpLoc :: Bool, jits :: [String], simplize :: Bool}
 
-defaultOptions = Options {toLLVM = False, dumpLoc = False, jits = []}
+defaultOptions = Options {toLLVM = False, dumpLoc = False, jits = [], simplize = True}
 
 -- | Translate c AST to MLIR
 translateToMLIR :: Options -> CTranslUnit -> IO String
@@ -180,18 +180,20 @@ translateToMLIR opts tu =
                        Left errs -> error $ show errs
                        Right (res, _) -> res
      nativeOp <- fromAST ctx (mempty, mempty) ast
-     check <- if toLLVM opts then do
+     check <- do
                 -- run passes to llvm ir
                 Just m <- MLIR.moduleFromOperation nativeOp
                 MLIR.withPassManager ctx $ \pm -> do
-                  MLIR.addConvertAffineToStandardPass pm
-                  MLIR.addConvertSCFToStandardPass  pm
-                  MLIR.addConvertMemRefToLLVMPass   pm
-                  MLIR.addConvertVectorToLLVMPass   pm
-                  MLIR.addConvertStandardToLLVMPass pm
-                  MLIR.addConvertReconcileUnrealizedCastsPass pm
+                  when (toLLVM opts) $ do 
+                    MLIR.addConvertAffineToStandardPass pm
+                    MLIR.addConvertSCFToStandardPass  pm
+                    MLIR.addConvertMemRefToLLVMPass   pm
+                    MLIR.addConvertVectorToLLVMPass   pm
+                    MLIR.addConvertStandardToLLVMPass pm
+                    MLIR.addConvertReconcileUnrealizedCastsPass pm
+                  when (simplize opts) $ do
+                    MLIR.addTransformsCanonicalizerPass pm
                   (== MLIR.Success) <$> MLIR.runPasses pm m
-              else MLIR.verifyOperation nativeOp
      --MLIR.dump nativeOp
      unless check $ exitWith (ExitFailure 1)
      if not . null $ jits opts then do
