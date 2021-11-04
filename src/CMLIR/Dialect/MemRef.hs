@@ -52,3 +52,14 @@ cast loc ty src = Operation
   , opSuccessors = []
   , opAttributes = NoAttrs
   }
+
+view :: Location -> Type -> Name -> Name -> [Name] -> Operation
+view loc ty src offset sizes = Operation
+  { opName = "memref.view"
+  , opLocation = loc
+  , opResultTypes = Explicit [ty]
+  , opOperands = [src, offset]++sizes
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = NoAttrs
+  }

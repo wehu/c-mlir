@@ -642,6 +642,9 @@ transExpr c@(CCast t e node) = do
           | isInt srcTy && isFloat dstTy =
             [Left $ id AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc (AST.IntegerType AST.Signless (bits dstTy)) srcId
             ,Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc dstTy id]
+          | isI8Memref srcTy && isStaticShapeMemref dstTy =
+            [Left $ id AST.:= constIndex0 loc
+            ,Left $ dstId AST.:= MemRef.view loc dstTy srcId id []]
           | isMemref srcTy && isMemref dstTy =
             [Left $ dstId AST.:= MemRef.cast loc dstTy srcId]
           | otherwise = unsupported (posOf c) c
@@ -662,6 +665,13 @@ transExpr c@(CCast t e node) = do
         isMemref ty = case ty of
                         AST.MemRefType{} -> True
                         _ -> False
+        isI8Memref ty = case ty of
+                          (AST.MemRefType [_] (AST.IntegerType AST.Signless 8) _ _) -> True 
+                          _ -> False
+        isStaticShapeMemref ty =
+          case ty of
+            (AST.MemRefType ds ty _ _) | all (isn't _Nothing) ds -> True
+            _ -> False                    
         bits ty = case ty of
                     AST.Float16Type -> 16
                     AST.Float32Type -> 32

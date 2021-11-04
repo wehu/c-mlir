@@ -1058,6 +1058,24 @@ module  {
 }
       |]
     
+    it "can translate i8 pointer casting" $ do
+      [r|
+void foo() {
+  char *b;
+  (int [8])b;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<memref<?xi8>>
+    %1 = memref.load %0[] : memref<memref<?xi8>>
+    %c0 = arith.constant 0 : index
+    %2 = memref.view %1[%c0][] : memref<?xi8> to memref<8xi32>
+    return
+  }
+}
+      |]
+    
     it "can translate enum" $ do
       [r|
 enum test {
