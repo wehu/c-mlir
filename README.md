@@ -17,7 +17,7 @@ Dynamic sizes array, `break`, `continue`, `goto`, `&` and `switch`/`case` are no
 
 ```c
 __kernel void foo(__global float* input, __local float *a) {
-  for (int i=0; i<100; i+=1) {
+  for (int i=0; i<100; i++) {
     input[i] = a[i];
     a[i] = input[i];
   }
@@ -30,15 +30,10 @@ Output IR as below:
 module  {
   func @foo(%arg0: memref<?xf32, 2>, %arg1: memref<?xf32, 1>) attributes {cl.kernel = true, llvm.emit_c_interface} {
     affine.for %arg2 = 0 to 100 {
-      %0 = arith.index_cast %arg2 : index to i32
-      %1 = arith.index_cast %0 : i32 to index
-      %2 = memref.load %arg1[%1] : memref<?xf32, 1>
-      %3 = arith.index_cast %0 : i32 to index
-      memref.store %2, %arg0[%3] : memref<?xf32, 2>
-      %4 = arith.index_cast %0 : i32 to index
-      %5 = memref.load %arg0[%4] : memref<?xf32, 2>
-      %6 = arith.index_cast %0 : i32 to index
-      memref.store %5, %arg1[%6] : memref<?xf32, 1>
+      %0 = memref.load %arg1[%arg2] : memref<?xf32, 1>
+      memref.store %0, %arg0[%arg2] : memref<?xf32, 2>
+      %1 = memref.load %arg0[%arg2] : memref<?xf32, 2>
+      memref.store %1, %arg1[%arg2] : memref<?xf32, 1>
     }
     return
   }
