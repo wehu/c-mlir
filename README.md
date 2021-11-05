@@ -63,11 +63,25 @@ module  {
 
 
 ```c
-__kernel void foo(__global float* input, __local float *a) {
-  for (int i=0; i<100; i++) {
-    input[i] = a[i];
-    a[i] = input[i];
-  }
+int get_global_id(int);
+
+__kernel void GEMM(const int M, const int N, const int K,
+                  const __global float* A,
+                  const __global float* B,
+                  __global float* C) {
+    
+    // Thread identifiers
+    const int globalRow = get_global_id(0); // Row ID of C (0..M)
+    const int globalCol = get_global_id(1); // Col ID of C (0..N)
+ 
+    // Compute a single element (loop over K)
+    float acc = 0.0f;
+    for (int k=0; k<K; k++) {
+        acc += A[k*M + globalRow] * B[globalCol*K + k];
+    }
+ 
+    // Store the result
+    C[globalCol*M + globalRow] = acc;
 }
 ```
 
@@ -75,13 +89,46 @@ Output IR as below:
 
 ```mlir
 module  {
-  func @foo(%arg0: memref<?xf32, 2>, %arg1: memref<?xf32, 1>) attributes {cl.kernel = true, llvm.emit_c_interface} {
-    affine.for %arg2 = 0 to 100 {
-      %0 = affine.load %arg1[%arg2] : memref<?xf32, 1>
-      affine.store %0, %arg0[%arg2] : memref<?xf32, 2>
-      %1 = affine.load %arg0[%arg2] : memref<?xf32, 2>
-      affine.store %1, %arg1[%arg2] : memref<?xf32, 1>
+  func private @get_global_id(i32) -> i32
+  func @GEMM(%arg0: i32, %arg1: i32, %arg2: i32, %arg3: memref<?xf32, 2>, %arg4: memref<?xf32, 2>, %arg5: memref<?xf32, 2>) attributes {cl.kernel = true, llvm.emit_c_interface} {
+    %c1 = arith.constant 1 : index
+    %c0 = arith.constant 0 : index
+    %c1_i32 = arith.constant 1 : i32
+    %c0_i32 = arith.constant 0 : i32
+    %cst = arith.constant 0.000000e+00 : f32
+    %0 = call @get_global_id(%c0_i32) : (i32) -> i32
+    %1 = memref.alloca() : memref<i32>
+    affine.store %0, %1[] : memref<i32>
+    %2 = call @get_global_id(%c1_i32) : (i32) -> i32
+    %3 = memref.alloca() : memref<i32>
+    affine.store %2, %3[] : memref<i32>
+    %4 = memref.alloca() : memref<f32>
+    affine.store %cst, %4[] : memref<f32>
+    %5 = arith.index_cast %arg2 : i32 to index
+    scf.for %arg6 = %c0 to %5 step %c1 {
+      %12 = arith.index_cast %arg6 : index to i32
+      %13 = affine.load %4[] : memref<f32>
+      %14 = arith.muli %12, %arg0 : i32
+      %15 = affine.load %1[] : memref<i32>
+      %16 = arith.addi %14, %15 : i32
+      %17 = arith.index_cast %16 : i32 to index
+      %18 = memref.load %arg3[%17] : memref<?xf32, 2>
+      %19 = affine.load %3[] : memref<i32>
+      %20 = arith.muli %19, %arg2 : i32
+      %21 = arith.addi %20, %12 : i32
+      %22 = arith.index_cast %21 : i32 to index
+      %23 = memref.load %arg4[%22] : memref<?xf32, 2>
+      %24 = arith.mulf %18, %23 : f32
+      %25 = arith.addf %13, %24 : f32
+      affine.store %25, %4[] : memref<f32>
     }
+    %6 = affine.load %4[] : memref<f32>
+    %7 = affine.load %3[] : memref<i32>
+    %8 = arith.muli %7, %arg0 : i32
+    %9 = affine.load %1[] : memref<i32>
+    %10 = arith.addi %8, %9 : i32
+    %11 = arith.index_cast %10 : i32 to index
+    memref.store %6, %arg5[%11] : memref<?xf32, 2>
     return
   }
 }
