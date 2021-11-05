@@ -16,17 +16,16 @@ For opencl, `__local` is mapped to memory space `1`, `__global` is mapped to mem
 Dynamic sizes array, `break`, `continue`, `goto`, `&` and `switch`/`case` are not supported.
 
 ```c
-#define N 10
-#define M 20
-#define K 30
-
+#define N 1
+#define M 2
+#define K 3
 void matmul() {
   float lhs[N][K];
   float rhs[K][M];
   float output[N][M];
   for (int i=0; i<N; ++i) {
     for (int j=0; j<M; ++j) {
-      output[i][i] = 0.0;
+      output[i][j] = 0.0;
       for (int k=0; k<K; ++k) {
         output[i][j] += lhs[i][k] * rhs[k][j];
       }
