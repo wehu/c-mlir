@@ -1238,3 +1238,43 @@ module  {
   }
 }
       |]
+
+    it "can translate for inductions with same names" $ do
+      [r|
+void foo(int i) {
+  int a[10];
+  a[i] = 1;
+  for (int i=0; i<10; ++i) {
+    a[i] = 2;
+    for (int i=0; i<10; ++i) {
+      a[i] = 3;
+    }
+  }
+}
+      |] `shouldBeTranslatedAs` [r|
+#map0 = affine_map<(d0) -> (d0)>
+#map1 = affine_map<(d0) -> (d1)>
+module  {
+  func @foo(%arg0: i32) attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<10xi32>
+    %c1_i32 = arith.constant 1 : i32
+    %1 = arith.index_cast %arg0 : i32 to index
+    memref.store %c1_i32, %0[%1] : memref<10xi32>
+    affine.for %arg1 = 0 to 10 {
+      %2 = arith.index_cast %arg1 : index to i32
+      %c2_i32 = arith.constant 2 : i32
+      %3 = arith.index_cast %2 : i32 to index
+      %4 = affine.apply #map0(%arg1)
+      affine.store %c2_i32, %0[%4] : memref<10xi32>
+      affine.for %arg2 = 0 to 10 {
+        %5 = arith.index_cast %arg2 : index to i32
+        %c3_i32 = arith.constant 3 : i32
+        %6 = arith.index_cast %5 : i32 to index
+        %7 = affine.apply #map1(%arg2)
+        affine.store %c3_i32, %0[%7] : memref<10xi32>
+      }
+    }
+    return
+  }
+}
+      |]
