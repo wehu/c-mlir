@@ -64,6 +64,7 @@ data Env = Env {decls :: [Decl],
                 vars :: M.Map String (BU.ByteString, SType, Bool),
                 kernels :: M.Map String Bool,
                 inductions :: M.Map String (Int, BU.ByteString),
+                isAffineScope :: Bool,
                 idCounter :: Int}
 
 type EnvM = TravT Env Identity
@@ -81,6 +82,7 @@ initEnv = Env{decls = [],
               vars = M.empty,
               kernels = M.empty,
               inductions = M.empty,
+              isAffineScope = False,
               idCounter = 0}
 
 --------------------------------------------------------------------
@@ -88,6 +90,7 @@ initEnv = Env{decls = [],
 
 underScope action = do
   env <- getUserState
+  modifyUserState (\s -> s{isAffineScope=False})
   result <- action
   id <- idCounter <$> getUserState
   modifyUserState (const env{idCounter=id})
@@ -300,6 +303,7 @@ transFunction f@(FunDef var stmt node) = do
   let (name, (ty, sign)) = varDecl (posOf node) var
   modifyUserState (\s -> s{funsWithBody=M.insert name ty (funsWithBody s)})
   underScope $ do
+    modifyUserState (\s -> s{isAffineScope = True})
     argIds <- mapM (\(n, t) -> do
                       id <- freshName
                       addVar n (id, t, False)
@@ -393,12 +397,13 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
                       (fromJust initBs)
         else return []
   addVar n (resId, t, isAssignable)
-  -- indBs <- if isConst && t^._1 == AST.IntegerType AST.Signless 32 then do
-  --            (indBs, indId) <- toIndex (getPos node) resId (t^._1)
-  --            addInduction n indId
-  --            return [indBs]
-  --          else return []
-  return $ join (fromMaybe [[]] initBs) ++ [b] ++ st -- ++ indBs
+  isAffineS <- isAffineScope <$> getUserState
+  indBs <- if isAffineS && isConst && isn't _Nothing initBs && t^._1 == AST.IntegerType AST.Signless 32 then do
+             (indBs, indId) <- toIndex (getPos node) resId (t^._1)
+             addInduction n indId
+             return [indBs]
+           else return []
+  return $ join (fromMaybe [[]] initBs) ++ [b] ++ st ++ indBs
 
 -- | Translate an initalization expression
 transInit :: CInitializer NodeInfo -> EnvM [[BindingOrName]]

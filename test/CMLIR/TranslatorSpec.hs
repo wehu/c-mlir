@@ -1401,14 +1401,15 @@ module  {
   func @foo() attributes {llvm.emit_c_interface} {
     %0 = memref.alloca() : memref<i32>
     %c1_i32 = arith.constant 1 : i32
-    %1 = memref.alloca() : memref<2xi32>
+    %1 = arith.index_cast %c1_i32 : i32 to index
+    %2 = memref.alloca() : memref<2xi32>
     %c1_i32_0 = arith.constant 1 : i32
     %c2_i32 = arith.constant 2 : i32
-    %2 = memref.alloca() : memref<2xi32>
+    %3 = memref.alloca() : memref<2xi32>
     %c0 = arith.constant 0 : index
-    affine.store %c1_i32_0, %2[%c0] : memref<2xi32>
+    affine.store %c1_i32_0, %3[%c0] : memref<2xi32>
     %c1 = arith.constant 1 : index
-    affine.store %c2_i32, %2[%c1] : memref<2xi32>
+    affine.store %c2_i32, %3[%c1] : memref<2xi32>
     return
   }
 }
