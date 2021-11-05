@@ -365,10 +365,10 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
         else case t of
                (t@AST.MemRefType{}, _) -> (t, False)
                (t, _) -> (if isConst then t else AST.MemRefType [] t Nothing Nothing, not isConst)
-      (b, resId) = if isConst then 
-                     let id = lastId (join $ fromMaybe [[]] initBs)
+      (b, resId) = if isConst && isn't _Nothing initBs then 
+                     let id = lastId (join $ fromJust initBs)
                       in (Right id, id)
-                    else (Left $ id AST.:= MemRef.alloca (getPos node) mt [] [], id)
+                   else (Left $ id AST.:= MemRef.alloca (getPos node) mt [] [], id)
   st <- if isn't _Nothing initBs && not isConst then do
           (^._1) <$> foldM (\(s, index) initBs -> do
                        let ds = case mt of
