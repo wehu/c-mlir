@@ -1266,3 +1266,117 @@ module  {
   }
 }
       |]
+
+    it "can translate nested initialization" $ do
+      [r|
+void foo() {
+  float lhs[1][3] = {{1.0, 2.0, 3.0}};
+  int rhs[2][3] = {{1,2,3},{4,5,6}};
+  int output[2][3][2] = {{{1,2},{3,4},{5,6}},{{7,8},{9,10},{11,12}}};
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %cst = arith.constant 1.000000e+00 : f32
+    %cst_0 = arith.constant 2.000000e+00 : f32
+    %cst_1 = arith.constant 3.000000e+00 : f32
+    %0 = memref.alloca() : memref<1x3xf32>
+    %c0 = arith.constant 0 : index
+    %c0_2 = arith.constant 0 : index
+    affine.store %cst, %0[%c0, %c0_2] : memref<1x3xf32>
+    %c0_3 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    affine.store %cst_0, %0[%c0_3, %c1] : memref<1x3xf32>
+    %c0_4 = arith.constant 0 : index
+    %c2 = arith.constant 2 : index
+    affine.store %cst_1, %0[%c0_4, %c2] : memref<1x3xf32>
+    %c1_i32 = arith.constant 1 : i32
+    %c2_i32 = arith.constant 2 : i32
+    %c3_i32 = arith.constant 3 : i32
+    %c4_i32 = arith.constant 4 : i32
+    %c5_i32 = arith.constant 5 : i32
+    %c6_i32 = arith.constant 6 : i32
+    %1 = memref.alloca() : memref<2x3xi32>
+    %c0_5 = arith.constant 0 : index
+    %c0_6 = arith.constant 0 : index
+    affine.store %c1_i32, %1[%c0_5, %c0_6] : memref<2x3xi32>
+    %c0_7 = arith.constant 0 : index
+    %c1_8 = arith.constant 1 : index
+    affine.store %c2_i32, %1[%c0_7, %c1_8] : memref<2x3xi32>
+    %c0_9 = arith.constant 0 : index
+    %c2_10 = arith.constant 2 : index
+    affine.store %c3_i32, %1[%c0_9, %c2_10] : memref<2x3xi32>
+    %c1_11 = arith.constant 1 : index
+    %c3 = arith.constant 3 : index
+    affine.store %c4_i32, %1[%c1_11, %c3] : memref<2x3xi32>
+    %c1_12 = arith.constant 1 : index
+    %c4 = arith.constant 4 : index
+    affine.store %c5_i32, %1[%c1_12, %c4] : memref<2x3xi32>
+    %c1_13 = arith.constant 1 : index
+    %c5 = arith.constant 5 : index
+    affine.store %c6_i32, %1[%c1_13, %c5] : memref<2x3xi32>
+    %c1_i32_14 = arith.constant 1 : i32
+    %c2_i32_15 = arith.constant 2 : i32
+    %c3_i32_16 = arith.constant 3 : i32
+    %c4_i32_17 = arith.constant 4 : i32
+    %c5_i32_18 = arith.constant 5 : i32
+    %c6_i32_19 = arith.constant 6 : i32
+    %c7_i32 = arith.constant 7 : i32
+    %c8_i32 = arith.constant 8 : i32
+    %c9_i32 = arith.constant 9 : i32
+    %c10_i32 = arith.constant 10 : i32
+    %c11_i32 = arith.constant 11 : i32
+    %c12_i32 = arith.constant 12 : i32
+    %2 = memref.alloca() : memref<2x3x2xi32>
+    %c0_20 = arith.constant 0 : index
+    %c0_21 = arith.constant 0 : index
+    %c0_22 = arith.constant 0 : index
+    affine.store %c1_i32_14, %2[%c0_20, %c0_21, %c0_22] : memref<2x3x2xi32>
+    %c0_23 = arith.constant 0 : index
+    %c0_24 = arith.constant 0 : index
+    %c1_25 = arith.constant 1 : index
+    affine.store %c2_i32_15, %2[%c0_23, %c0_24, %c1_25] : memref<2x3x2xi32>
+    %c0_26 = arith.constant 0 : index
+    %c1_27 = arith.constant 1 : index
+    %c2_28 = arith.constant 2 : index
+    affine.store %c3_i32_16, %2[%c0_26, %c1_27, %c2_28] : memref<2x3x2xi32>
+    %c0_29 = arith.constant 0 : index
+    %c1_30 = arith.constant 1 : index
+    %c3_31 = arith.constant 3 : index
+    affine.store %c4_i32_17, %2[%c0_29, %c1_30, %c3_31] : memref<2x3x2xi32>
+    %c0_32 = arith.constant 0 : index
+    %c2_33 = arith.constant 2 : index
+    %c4_34 = arith.constant 4 : index
+    affine.store %c5_i32_18, %2[%c0_32, %c2_33, %c4_34] : memref<2x3x2xi32>
+    %c0_35 = arith.constant 0 : index
+    %c2_36 = arith.constant 2 : index
+    %c5_37 = arith.constant 5 : index
+    affine.store %c6_i32_19, %2[%c0_35, %c2_36, %c5_37] : memref<2x3x2xi32>
+    %c1_38 = arith.constant 1 : index
+    %c3_39 = arith.constant 3 : index
+    %c6 = arith.constant 6 : index
+    affine.store %c7_i32, %2[%c1_38, %c3_39, %c6] : memref<2x3x2xi32>
+    %c1_40 = arith.constant 1 : index
+    %c3_41 = arith.constant 3 : index
+    %c7 = arith.constant 7 : index
+    affine.store %c8_i32, %2[%c1_40, %c3_41, %c7] : memref<2x3x2xi32>
+    %c1_42 = arith.constant 1 : index
+    %c4_43 = arith.constant 4 : index
+    %c8 = arith.constant 8 : index
+    affine.store %c9_i32, %2[%c1_42, %c4_43, %c8] : memref<2x3x2xi32>
+    %c1_44 = arith.constant 1 : index
+    %c4_45 = arith.constant 4 : index
+    %c9 = arith.constant 9 : index
+    affine.store %c10_i32, %2[%c1_44, %c4_45, %c9] : memref<2x3x2xi32>
+    %c1_46 = arith.constant 1 : index
+    %c5_47 = arith.constant 5 : index
+    %c10 = arith.constant 10 : index
+    affine.store %c11_i32, %2[%c1_46, %c5_47, %c10] : memref<2x3x2xi32>
+    %c1_48 = arith.constant 1 : index
+    %c5_49 = arith.constant 5 : index
+    %c11 = arith.constant 11 : index
+    affine.store %c12_i32, %2[%c1_48, %c5_49, %c11] : memref<2x3x2xi32>
+    return
+  }
+}
+      |]
