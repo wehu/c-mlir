@@ -375,11 +375,11 @@ transInit (CInitExpr e node) = do
   bs <- transExpr e
   return [bs ^._1]
 transInit (CInitList [] _) = return []
-transInit (CInitList (([], init):res) node) = do
+transInit l@(CInitList (([], init):res) node) = do
   i <- transInit init
   r <- transInit (CInitList res node)
-  let [i'] = i
-  return $ i':r
+  if null i || L.length i > 1 then unsupported (posOf node) l
+  else return $ head i:r
 transInit init = unsupported (posOf init) init
 
 -- | Translate a statement
