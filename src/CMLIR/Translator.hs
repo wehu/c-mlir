@@ -364,7 +364,8 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
         if isPtr then (if isConst then t ^._1 else AST.MemRefType [] (t ^._1) Nothing Nothing, not isConst)
         else case t of
                (t@AST.MemRefType{}, _) -> (t, False)
-               (t, _) -> (if isConst then t else AST.MemRefType [] t Nothing Nothing, not isConst)
+               (t, _) -> (if isConst && isn't _Nothing initBs 
+                          then t else AST.MemRefType [] t Nothing Nothing, not isConst)
       (b, resId) = if isConst && isn't _Nothing initBs then 
                      let id = lastId (join $ fromJust initBs)
                       in (Right id, id)

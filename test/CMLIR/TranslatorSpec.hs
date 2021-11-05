@@ -1380,3 +1380,19 @@ module  {
   }
 }
       |]
+
+    it "can translate const variable decls" $ do
+      [r|
+void foo() {
+  const int v0;
+  const int v1 = 1;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<i32>
+    %c1_i32 = arith.constant 1 : i32
+    return
+  }
+}
+      |]
