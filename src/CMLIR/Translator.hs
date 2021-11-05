@@ -160,6 +160,10 @@ isStaticShapeMemref ty =
     (AST.MemRefType ds ty _ _) | all (isn't _Nothing) ds -> True
     _ -> False
 
+applyAffineExpr loc e operands = do
+  id <- freshName
+  return [Left $ id AST.:= Affine.apply loc e operands, Right id]
+
 data Options = Options {toLLVM :: Bool, dumpLoc :: Bool, jits :: [String], simplize :: Bool}
 
 defaultOptions = Options {toLLVM = False, dumpLoc = False, jits = [], simplize = True}
@@ -832,10 +836,6 @@ exprToAffineExpr vars (CBinary op lhs rhs node)
               CDivOp -> Affine.FloorDiv
               _ -> unsupported (posOf node) op) l r
 exprToAffineExpr _ _ = Nothing
-
-applyAffineExpr loc e operands = do
-  id <- freshName
-  return [Left $ id AST.:= Affine.apply loc e operands, Right id]
 
 -- | Translate a constant expression
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)
