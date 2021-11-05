@@ -300,6 +300,7 @@ transFunction f@(FunDef var stmt node) = do
   modifyUserState (\s -> s{funsWithBody=M.insert name ty (funsWithBody s)})
   underScope $ do
     mapM_ (uncurry addVar) [(a ^._1, (BU.fromString $ a ^._1, a^._2, False)) | a <- params (posOf node) var]
+    mapM_ addInduction [a ^._1 | a <- params (posOf node) var]
     b <- transBlock args [] stmt []
     let f = emitted $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
     isKernel <- M.lookup name . kernels <$> getUserState
