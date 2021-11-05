@@ -63,7 +63,7 @@ data Env = Env {decls :: [Decl],
                 enums :: M.Map String Integer,
                 vars :: M.Map String (BU.ByteString, SType, Bool),
                 kernels :: M.Map String Bool,
-                inductions :: M.Map String Int,
+                inductions :: M.Map String (Int, BU.ByteString),
                 idCounter :: Int}
 
 type EnvM = TravT Env Identity
@@ -111,8 +111,8 @@ lookupVar name = do
     Just v -> return v
     Nothing -> error $ "cannot find variable " ++ name
 
-addInduction name =
-  modifyUserState (\s -> s{inductions=M.insert name (M.size (inductions s)) (inductions s)})
+addInduction name id =
+  modifyUserState (\s -> s{inductions=M.insert name (M.size (inductions s), id) (inductions s)})
 
 freshName :: EnvM BU.ByteString
 freshName = do
@@ -208,7 +208,8 @@ translateToMLIR opts tu =
                   when (simplize opts) $ do
                     MLIR.addTransformsCanonicalizerPass pm
                   (== MLIR.Success) <$> MLIR.runPasses pm m
-     -- MLIR.dump nativeOp
+     --MLIR.dump nativeOp
+     check <- (check &&) <$> MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
      if not . null $ jits opts then do
        -- run jit
@@ -295,13 +296,11 @@ registerFunction f@(Decl var node) = do
 transFunction :: FunDef -> EnvM AST.Binding
 transFunction f@(FunDef var stmt node) = do
   let (name, (ty, sign)) = varDecl (posOf node) var
-      args = over (traverse . _1) BU.fromString $
-               over (traverse . _2) fst $ params (posOf node) var
   modifyUserState (\s -> s{funsWithBody=M.insert name ty (funsWithBody s)})
   underScope $ do
-    mapM_ (uncurry addVar) [(a ^._1, (BU.fromString $ a ^._1, a^._2, False)) | a <- params (posOf node) var]
-    mapM_ addInduction [a ^._1 | a <- params (posOf node) var]
-    b <- transBlock args [] stmt []
+    argIds <- mapM (\(n, t) -> do id <- freshName; addVar n (id, t, False); return (id, t^._1)) [(a ^._1, a ^._2) | a <- params (posOf node) var]
+    --mapM_ addInduction [a ^._1 | a <- params (posOf node) var]
+    b <- transBlock argIds [] stmt []
     let f = emitted $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
     isKernel <- M.lookup name . kernels <$> getUserState
     let f' = if isKernel ^.non False then
@@ -415,11 +414,11 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                 CConst (CIntConst (cInteger 1) node)
               _ -> unsupported (posOf stepE) stepE
   b <- underScope $ do
-    let varName = BU.fromString name
-        ty = AST.IntegerType AST.Signless 32
+    varName <- freshName
+    let ty = AST.IntegerType AST.Signless 32
     (index, id) <- fromIndex loc varName ty
     addVar name (id, (ty, True), False)
-    addInduction name
+    addInduction name varName
     transBlock [(varName, AST.IndexType)]
       [b | isn't _Right index, (Left b) <- [index]]
       body
@@ -452,11 +451,11 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                 CConst (CIntConst (cInteger 1) node)
               _ -> unsupported (posOf stepE) stepE
   b <- underScope $ do
-    let varName = BU.fromString name
-        ty = AST.IntegerType AST.Signless 32
+    varName <- freshName
+    let ty = AST.IntegerType AST.Signless 32
     (index, id) <- fromIndex loc varName ty
     addVar name (id, (ty, True), False)
-    addInduction name
+    addInduction name varName
     transBlock [(varName, AST.IndexType)]
       [b | isn't _Right index, (Left b) <- [index]]
       body
@@ -584,7 +583,7 @@ transExpr (CAssign op lhs rhs node) = do
           if isAffineLoad then do
             let es = map fromJust affineExprs
             indBs <- mapM (\e -> applyAffineExpr loc (Affine.Map (M.size vars) 0 [e])
-                           (map BU.fromString $ L.sortBy (\a b -> compare (snd a) (snd b)) (M.toList vars) ^..traverse._1)) es
+                           (L.sortBy (\a b -> compare (a^._2._1) (b^._2._1)) (M.toList vars) ^..traverse._2._2)) es
             return $ join (indexBs ^.. traverse . _1) ++
                       toIndices ^.. traverse . _1 ++ join indBs ++ [Left $ AST.Do $ Affine.store loc vId dstId (map lastId indBs)]
           else
@@ -672,7 +671,7 @@ transExpr (CIndex e index node) = do
           if isAffineLoad then do
             let es = map fromJust affineExprs
             indBs <- mapM (\e -> applyAffineExpr loc (Affine.Map (M.size vars) 0 [e])
-                           (map BU.fromString $ L.sortBy (\a b -> compare (snd a) (snd b)) (M.toList vars) ^..traverse._1)) es
+                           (L.sortBy (\a b -> compare (a^._2._1) (b^._2._1)) (M.toList vars) ^..traverse._2._2)) es
             return $ join (indexBs ^.. traverse . _1) ++
                       toIndices ^.. traverse . _1 ++ join indBs ++ [Left $ id AST.:= Affine.load loc ty srcId (map lastId indBs)]
           else
@@ -816,11 +815,11 @@ transExpr (CUnary CIndOp e node) = do
 transExpr e = unsupported (posOf e) e
 
 -- | Translate to affine Expr
-exprToAffineExpr :: M.Map String Int -> CExpr -> Maybe Affine.Expr
+exprToAffineExpr :: M.Map String (Int, BU.ByteString) -> CExpr -> Maybe Affine.Expr
 exprToAffineExpr vars (CVar ident node) =
   let name = identName ident
       v = M.lookup name vars
-   in fmap Affine.Dimension v
+   in fmap (\v -> Affine.Dimension $ v ^._1) v
 exprToAffineExpr vars c@(CConst (CIntConst _ _)) =
   fmap (Affine.Constant . fromIntegral) (intValue c)
 exprToAffineExpr vars (CBinary op lhs rhs node)
