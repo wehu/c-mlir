@@ -118,24 +118,19 @@ module  {
   func @foo() attributes {llvm.emit_c_interface} {
     %c97_i8 = arith.constant 97 : i8
     %0 = memref.alloca() : memref<i8>
-    %c0 = arith.constant 0 : index
     affine.store %c97_i8, %0[] : memref<i8>
     %c1_i32 = arith.constant 1 : i32
     %1 = memref.alloca() : memref<i32>
-    %c0_0 = arith.constant 0 : index
     affine.store %c1_i32, %1[] : memref<i32>
     %c1_i64 = arith.constant 1 : i64
     %2 = memref.alloca() : memref<i64>
-    %c0_1 = arith.constant 0 : index
     affine.store %c1_i64, %2[] : memref<i64>
     %cst = arith.constant 1.000000e-01 : f32
     %3 = memref.alloca() : memref<f32>
-    %c0_2 = arith.constant 0 : index
     affine.store %cst, %3[] : memref<f32>
-    %cst_3 = arith.constant 1.000000e-01 : f64
+    %cst_0 = arith.constant 1.000000e-01 : f64
     %4 = memref.alloca() : memref<f64>
-    %c0_4 = arith.constant 0 : index
-    affine.store %cst_3, %4[] : memref<f64>
+    affine.store %cst_0, %4[] : memref<f64>
     return
   }
 }
@@ -483,7 +478,6 @@ module  {
   func @foo() attributes {llvm.emit_c_interface} {
     %c0_i32 = arith.constant 0 : i32
     %0 = memref.alloca() : memref<i32>
-    %c0 = arith.constant 0 : index
     affine.store %c0_i32, %0[] : memref<i32>
     %1 = affine.load %0[] : memref<i32>
     %c10_i32 = arith.constant 10 : i32
@@ -510,7 +504,6 @@ module  {
   func @foo() attributes {llvm.emit_c_interface} {
     %c0_i32 = arith.constant 0 : i32
     %0 = memref.alloca() : memref<i32>
-    %c0 = arith.constant 0 : index
     affine.store %c0_i32, %0[] : memref<i32>
     scf.while : () -> () {
       %1 = affine.load %0[] : memref<i32>
@@ -542,7 +535,6 @@ module  {
   func @foo() attributes {llvm.emit_c_interface} {
     %c0_i32 = arith.constant 0 : i32
     %0 = memref.alloca() : memref<i32>
-    %c0 = arith.constant 0 : index
     affine.store %c0_i32, %0[] : memref<i32>
     scf.while : () -> () {
       %1 = affine.load %0[] : memref<i32>
@@ -574,7 +566,6 @@ module  {
   func @foo() attributes {llvm.emit_c_interface} {
     %c0_i32 = arith.constant 0 : i32
     %0 = memref.alloca() : memref<i32>
-    %c0 = arith.constant 0 : index
     affine.store %c0_i32, %0[] : memref<i32>
     %1 = affine.load %0[] : memref<i32>
     %c1_i32 = arith.constant 1 : i32
@@ -1103,7 +1094,6 @@ module  {
   func @foo(%arg0: i32) attributes {llvm.emit_c_interface} {
     %c0_i32 = arith.constant 0 : i32
     %0 = memref.alloca() : memref<i32>
-    %c0 = arith.constant 0 : index
     affine.store %c0_i32, %0[] : memref<i32>
     %c1_i32 = arith.constant 1 : i32
     affine.store %c1_i32, %0[] : memref<i32>
@@ -1211,7 +1201,6 @@ module  {
     %0 = arith.index_cast %c10_i32 : i32 to index
     %1 = memref.alloc(%0) : memref<?xi8>
     %2 = memref.alloca() : memref<memref<?xi8>>
-    %c0 = arith.constant 0 : index
     affine.store %1, %2[] : memref<memref<?xi8>>
     %3 = affine.load %2[] : memref<memref<?xi8>>
     memref.dealloc %3 : memref<?xi8>
@@ -1232,7 +1221,6 @@ module  {
     %0 = memref.alloca() : memref<10xi8>
     %1 = memref.cast %0 : memref<10xi8> to memref<?xi8>
     %2 = memref.alloca() : memref<memref<?xi8>>
-    %c0 = arith.constant 0 : index
     affine.store %1, %2[] : memref<memref<?xi8>>
     return
   }

@@ -340,7 +340,7 @@ transBlockItem s = unsupported (posOf s) s
 
 -- | Translate a local variable declaration
 transLocalDecl :: ObjDef -> EnvM [BindingOrName]
-transLocalDecl (ObjDef var init node) = do
+transLocalDecl d@(ObjDef var init node) = do
   let storage = declStorage var
   case storage of
     Static{} -> error $ "static is not supported" ++ show (posOf node)
@@ -356,13 +356,12 @@ transLocalDecl (ObjDef var init node) = do
       b = Left $ id AST.:= alloc
   st <- if isn't _Nothing initBs then do
           (^._1) <$> foldM (\(s, index) initBs -> do
-                       id0 <- freshName
-                       return (s++[Left $ id0 AST.:= constInt (getPos node) AST.IndexType index
-                                  ,Left $ AST.Do $ (Affine.store (getPos node) (lastId initBs) id
-                                                     (case mt of
-                                                       AST.MemRefType [] t Nothing Nothing -> []
-                                                       _ -> [id0])){
-                                    AST.opLocation=getPos node}], index+1))
+                       let ds = case mt of
+                                  (AST.MemRefType ds _ _ _) -> ds
+                                  _ -> unsupported (posOf node) d
+                       ids <- mapM (const freshName) ds
+                       let consts = map (\id -> Left $ id AST.:= constInt (getPos node) AST.IndexType index) ids
+                       return (s++consts++[Left $ AST.Do $ Affine.store (getPos node) (lastId initBs) id ids], index+1))
                        ([], 0::Int)
                       (fromJust initBs)
         else return []
@@ -378,8 +377,7 @@ transInit (CInitList [] _) = return []
 transInit l@(CInitList (([], init):res) node) = do
   i <- transInit init
   r <- transInit (CInitList res node)
-  if null i || L.length i > 1 then unsupported (posOf node) l
-  else return $ head i:r
+  return $ i ++ r
 transInit init = unsupported (posOf init) init
 
 -- | Translate a statement
