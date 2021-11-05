@@ -1386,12 +1386,22 @@ module  {
 void foo() {
   const int v0;
   const int v1 = 1;
+  const int v2[2];
+  const int v3[2] = {1,2};
 }
       |] `shouldBeTranslatedAs` [r|
 module  {
   func @foo() attributes {llvm.emit_c_interface} {
     %0 = memref.alloca() : memref<i32>
     %c1_i32 = arith.constant 1 : i32
+    %1 = memref.alloca() : memref<2xi32>
+    %c1_i32_0 = arith.constant 1 : i32
+    %c2_i32 = arith.constant 2 : i32
+    %2 = memref.alloca() : memref<2xi32>
+    %c0 = arith.constant 0 : index
+    affine.store %c1_i32_0, %2[%c0] : memref<2xi32>
+    %c1 = arith.constant 1 : index
+    affine.store %c2_i32, %2[%c1] : memref<2xi32>
     return
   }
 }
