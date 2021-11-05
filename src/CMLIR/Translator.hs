@@ -340,7 +340,7 @@ transBlockItem s = unsupported (posOf s) s
 
 -- | Translate a local variable declaration
 transLocalDecl :: ObjDef -> EnvM [BindingOrName]
-transLocalDecl d@(ObjDef var init node) = do
+transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
   let storage = declStorage var
   case storage of
     Static{} -> error $ "static is not supported" ++ show (posOf node)
@@ -348,10 +348,14 @@ transLocalDecl d@(ObjDef var init node) = do
   id <- freshName
   initBs <- mapM transInit init
   let (n, t) = varDecl (posOf node) var
-      (mt, isAssignable) = case t of
-             (t@(AST.MemRefType [Nothing] _ _ _), _) -> (AST.MemRefType [] t Nothing Nothing, True)
-             (t@AST.MemRefType{}, _) -> (t, False)
-             (t, _) -> (AST.MemRefType [] t Nothing Nothing, True)
+      isPtr = case orgTy of
+                (PtrType t _ _) -> True
+                _ -> False
+      (mt, isAssignable) = 
+        if isPtr then (AST.MemRefType [] (t ^._1) Nothing Nothing, True)
+        else case t of
+               (t@AST.MemRefType{}, _) -> (t, False)
+               (t, _) -> (AST.MemRefType [] t Nothing Nothing, True)
       alloc = MemRef.alloca (getPos node) mt [] []
       b = Left $ id AST.:= alloc
   st <- if isn't _Nothing initBs then do
