@@ -363,7 +363,8 @@ transLocalDecl d@(ObjDef var init node) = do
                        let shape = ds ^..traverse._Just
                            strides = tail $ L.foldl' (\s i -> (i*head s):s) [1] (reverse shape)
                        ids <- mapM (const freshName) ds
-                       let consts = L.foldl' (\(s, d) id -> (s++[Left $ id AST.:= constInt (getPos node) AST.IndexType (div index (strides !! d))], d+1)) ([], 0) ids
+                       let consts = L.foldl' (\(s, d) id -> (s++[Left $ id AST.:= constInt (getPos node) AST.IndexType
+                                           (mod (div index (strides !! d)) (shape !! d))], d+1)) ([], 0) ids
                        return (s++consts ^._1++[Left $ AST.Do $ Affine.store (getPos node) (lastId initBs) id ids], index+1))
                        ([], 0::Int)
                       (fromJust initBs)
