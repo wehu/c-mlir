@@ -490,7 +490,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
     let ty = AST.IntegerType AST.Signless 32
     (index, id) <- fromIndex loc varName ty
     addVar name (id, (ty, True), False)
-    addInduction name varName
+    -- addInduction name varName
     transBlock [(varName, AST.IndexType)]
       [b | isn't _Right index, (Left b) <- [index]]
       body
