@@ -348,10 +348,10 @@ transLocalDecl d@(ObjDef var init node) = do
   id <- freshName
   initBs <- mapM transInit init
   let (n, t) = varDecl (posOf node) var
-      mt = case t of
-             (t@(AST.MemRefType [Nothing] _ _ _), _) -> AST.MemRefType [] t Nothing Nothing
-             (t@AST.MemRefType{}, _) -> t
-             (t, _) -> AST.MemRefType [] t Nothing Nothing
+      (mt, isAssignable) = case t of
+             (t@(AST.MemRefType [Nothing] _ _ _), _) -> (AST.MemRefType [] t Nothing Nothing, True)
+             (t@AST.MemRefType{}, _) -> (t, False)
+             (t, _) -> (AST.MemRefType [] t Nothing Nothing, True)
       alloc = MemRef.alloca (getPos node) mt [] []
       b = Left $ id AST.:= alloc
   st <- if isn't _Nothing initBs then do
@@ -369,7 +369,7 @@ transLocalDecl d@(ObjDef var init node) = do
                        ([], 0::Int)
                       (fromJust initBs)
         else return []
-  addVar n (id, t, True)
+  addVar n (id, t, isAssignable)
   return $ join (fromMaybe [[]] initBs) ++ [b] ++ st
 
 -- | Translate an initalization expression
@@ -526,20 +526,16 @@ transExpr (CVar ident node) = do
       let ty = AST.IntegerType AST.Signless 32
       return ([Left $ id AST.:= constInt (getPos node) ty (fromInteger enum), Right id], (ty, True))
     Nothing -> do
-      (id, (ty, sign), isLocal) <- lookupVar name
-      if isLocal then do
-        case ty of
-          AST.MemRefType ds _ _ _ | ds /= [Nothing] ->
-            return ([Right id], (ty, sign))
-          _ -> do
-            id1 <- freshName
-            let ld = Affine.load (getPos node) ty id []
-                op1 = id1 AST.:= ld
-            return ([Left op1, Right id1], (ty, sign))
+      (id, (ty, sign), isAssignable) <- lookupVar name
+      if isAssignable then do
+        id1 <- freshName
+        let ld = Affine.load (getPos node) ty id []
+            op1 = id1 AST.:= ld
+        return ([Left op1, Right id1], (ty, sign))
       else return ([Right id], (ty, sign))
 transExpr (CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
-  (id, ty, srcBs, isLocal, isDeref) <- case src of
+  (id, ty, srcBs, isAssignable, isDeref) <- case src of
                        CVar ident _ -> (\(a, b, c) -> (a, b, [], c, False)) <$> lookupVar (identName ident)
                        (CUnary CIndOp e node) | null indices -> (\(a, b) -> (lastId a, b, a, False, True)) <$> transExpr e
                        _ -> (\(a, b) -> (lastId a, b, a, False, True)) <$> transExpr src
@@ -564,16 +560,12 @@ transExpr (CAssign op lhs rhs node) = do
     return (srcBs ++ rhsBs ++ c0 ++ [Left op1], ty)
   else do
     let (dstTy, sign) = case ty of
-                  (AST.MemRefType [Nothing] ty _ _, sign) -> (ty, sign)
                   (AST.MemRefType _ ty _ _, sign) -> (ty, sign)
                   _ -> unsupported (posOf src) src
     id1 <- freshName
-    st <- case ty of
-               (ty@(AST.MemRefType [Nothing] _ _ ms), _) -> do
-                 if isLocal
-                 then ([Left $ id1 AST.:= Affine.load (getPos node) ty id []] ++) <$> tryStore (getPos node) rhsId id1 indices
-                 else tryStore (getPos node) rhsId id indices
-               _ -> tryStore (getPos node) rhsId id indices
+    st <- if isAssignable
+          then ([Left $ id1 AST.:= Affine.load (getPos node) (ty^._1) id []] ++) <$> tryStore (getPos node) rhsId id1 indices
+          else tryStore (getPos node) rhsId id indices
     return (srcBs ++ rhsBs ++ st, (dstTy, sign))
   where tryStore loc vId dstId indices = do
           indexBs <- mapM transExpr indices
@@ -645,23 +637,19 @@ transExpr (CCond cond (Just lhs) rhs node) = do
           [Left sel, Right id], (lhsTy, lhsSign))
 transExpr (CIndex e index node) = do
   let (src, indices) = collectIndices e [index]
-  (srcId, (srcTy, sign), srcBs, isLocal) <-
+  (srcId, (srcTy, sign), srcBs, isAssignable) <-
      case src of
        CVar ident _ -> (\(a, b, c) -> (a, b, [],c)) <$> lookupVar (identName ident)
        _ -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr src
 
   let ty = case srcTy of
-             AST.MemRefType [Nothing] ty _ _ -> ty
              AST.MemRefType _ ty _ _ -> ty
              _ -> unsupported (posOf src) src
   id <- freshName
   id1 <- freshName
-  ld <- case srcTy of
-             AST.MemRefType [Nothing] ty _ ms ->
-               if isLocal
-               then ([Left $ id1 AST.:= Affine.load (getPos node) srcTy srcId []] ++) <$> tryLoad (getPos node) ty srcTy id id1 indices
-               else tryLoad (getPos node) ty srcTy id srcId indices
-             _ -> tryLoad (getPos node) ty srcTy id srcId indices
+  ld <- if isAssignable
+        then ([Left $ id1 AST.:= Affine.load (getPos node) srcTy srcId []] ++) <$> tryLoad (getPos node) ty srcTy id id1 indices
+        else tryLoad (getPos node) ty srcTy id srcId indices
   return (srcBs ++ ld ++ [Right id], (ty, sign))
   where tryLoad loc ty srcTy id srcId indices = do
           indexBs <- mapM transExpr indices
