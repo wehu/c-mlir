@@ -209,7 +209,9 @@ translateToMLIR opts tu =
                     MLIR.addTransformsCanonicalizerPass pm
                   (== MLIR.Success) <$> MLIR.runPasses pm m
      --MLIR.dump nativeOp
-     check <- (check &&) <$> MLIR.verifyOperation nativeOp
+     check <- if not (toLLVM opts) && not (simplize opts)
+              then MLIR.verifyOperation nativeOp 
+              else return check
      unless check $ exitWith (ExitFailure 1)
      if not . null $ jits opts then do
        -- run jit
