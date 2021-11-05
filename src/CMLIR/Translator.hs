@@ -298,9 +298,12 @@ transFunction f@(FunDef var stmt node) = do
   let (name, (ty, sign)) = varDecl (posOf node) var
   modifyUserState (\s -> s{funsWithBody=M.insert name ty (funsWithBody s)})
   underScope $ do
-    argIds <- mapM (\(n, t) -> do id <- freshName; addVar n (id, t, False); return (id, t^._1)) [(a ^._1, a ^._2) | a <- params (posOf node) var]
-    mapM_ (\(n, t, id) -> when (t == AST.IndexType) $ addInduction n id)
-       [ (p ^._1, p ^._2._1, id ^._1) | p <- params (posOf node) var | id <- argIds]
+    argIds <- mapM (\(n, t) -> do
+                      id <- freshName
+                      addVar n (id, t, False)
+                      return (id, t^._1)) [(a ^._1, a ^._2) | a <- params (posOf node) var]
+    -- mapM_ (\(n, t, id) -> when (t == AST.IndexType) $ addInduction n id)
+    --   [ (p ^._1, p ^._2._1, id ^._1) | p <- params (posOf node) var | id <- argIds]
     b <- transBlock argIds [] stmt []
     let f = emitted $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
     isKernel <- M.lookup name . kernels <$> getUserState
@@ -380,7 +383,7 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
                       (fromJust initBs)
         else return []
   addVar n (resId, t, isAssignable)
-  when (isConst && t^._1 == AST.IndexType) $ addInduction n resId
+  -- when (isConst && t^._1 == AST.IndexType) $ addInduction n resId
   return $ join (fromMaybe [[]] initBs) ++ [b] ++ st
 
 -- | Translate an initalization expression
@@ -939,7 +942,7 @@ type_ pos ms ty@(DirectType name quals attrs) =
     TyIntegral (id -> TyUChar) -> (AST.IntegerType AST.Signless 8, False)
     TyIntegral (id -> TyShort) -> (AST.IntegerType AST.Signless 16, True)
     TyIntegral (id -> TyUShort) -> (AST.IntegerType AST.Signless 16, False)
-    TyIntegral (id -> TyInt) -> (AST.IntegerType AST.Signless 32, True)
+    TyIntegral (id -> TyInt) ->  (AST.IntegerType AST.Signless 32, True)
     TyIntegral (id -> TyUInt) -> (AST.IntegerType AST.Signless 32, False)
     TyIntegral (id -> TyInt128) -> (AST.IntegerType AST.Signless 128, True)
     TyIntegral (id -> TyUInt128) -> (AST.IntegerType AST.Signless 128, False)
