@@ -163,9 +163,11 @@ isStaticShapeMemref ty =
     (AST.MemRefType ds ty _ _) | all (isn't _Nothing) ds -> True
     _ -> False
 
-applyAffineExpr loc e operands = do
+applyAffineExpr :: AST.Location -> M.Map String (Int, BU.ByteString) -> Affine.Expr -> EnvM [BindingOrName]
+applyAffineExpr loc vars e = do
   id <- freshName
-  return [Left $ id AST.:= Affine.apply loc e operands, Right id]
+  let operands = L.sortBy (\a b -> compare (a^._2._1) (b^._2._1)) (M.toList vars) ^..traverse._2._2
+  return [Left $ id AST.:= Affine.apply loc (Affine.Map (M.size vars) 0 [e]) operands, Right id]
 
 data Options = Options {toLLVM :: Bool, dumpLoc :: Bool, jits :: [String], simplize :: Bool}
 
@@ -213,7 +215,7 @@ translateToMLIR opts tu =
                   (== MLIR.Success) <$> MLIR.runPasses pm m
      --MLIR.dump nativeOp
      check <- if not (toLLVM opts) && not (simplize opts)
-              then MLIR.verifyOperation nativeOp 
+              then MLIR.verifyOperation nativeOp
               else return check
      unless check $ exitWith (ExitFailure 1)
      if not . null $ jits opts then do
@@ -308,7 +310,7 @@ transFunction f@(FunDef var stmt node) = do
                       id <- freshName
                       addVar n (id, t, False)
                       return (id, t^._1)) [(a ^._1, a ^._2) | a <- params (posOf node) var]
-    indBs <- mapM (\(n, t, id) -> 
+    indBs <- mapM (\(n, t, id) ->
                       if t == AST.IntegerType AST.Signless 32 then do
                         (indBs, indId) <- toIndex (getPos node) id t
                         addInduction n indId
@@ -371,13 +373,13 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
                 (ArrayType _ _ quals _) -> (False, constant quals)
                 (TypeDefType _ quals _) -> (False, constant quals)
                 _ -> (False, False)
-      (mt, isAssignable) = 
+      (mt, isAssignable) =
         if isPtr then (if isConst then t ^._1 else AST.MemRefType [] (t ^._1) Nothing Nothing, not isConst)
         else case t of
                (t@AST.MemRefType{}, _) -> (t, False)
-               (t, _) -> (if isConst && isn't _Nothing initBs 
+               (t, _) -> (if isConst && isn't _Nothing initBs
                           then t else AST.MemRefType [] t Nothing Nothing, not isConst)
-      (b, resId) = if isConst && isn't _Nothing initBs then 
+      (b, resId) = if isConst && isn't _Nothing initBs then
                      let id = lastId (join $ fromJust initBs)
                       in (Right id, id)
                    else (Left $ id AST.:= MemRef.alloca (getPos node) mt [] [], id)
@@ -441,7 +443,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
       (CAssign CAddAssOp (CVar ident2 _) step _) -> ident1 == ident2
       (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp -> ident1 == ident2
       _ -> False) = do
-  vars <- inductions <$> getUserState 
+  vars <- inductions <$> getUserState
   let name = identName ident0
       loc = getPos node
       step = case stepE of
@@ -452,10 +454,8 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
       lbAE = exprToAffineExpr vars lb
       ubAE = exprToAffineExpr vars ub
   if isn't _Nothing lbAE && isn't _Nothing ubAE then do
-    lbInd <- applyAffineExpr loc (Affine.Map (M.size vars) 0 [fromJust lbAE])
-              (L.sortBy (\a b -> compare (a^._2._1) (b^._2._1)) (M.toList vars) ^..traverse._2._2)
-    ubInd <- applyAffineExpr loc (Affine.Map (M.size vars) 0 [fromJust ubAE])
-              (L.sortBy (\a b -> compare (a^._2._1) (b^._2._1)) (M.toList vars) ^..traverse._2._2)
+    lbInd <- applyAffineExpr loc vars $ fromJust lbAE
+    ubInd <- applyAffineExpr loc vars $ fromJust ubAE
     b <- underScope $ do
       varName <- freshName
       let ty = AST.IntegerType AST.Signless 32
@@ -598,8 +598,7 @@ transExpr (CAssign op lhs rhs node) = do
               isAffineLoad = all (isn't _Nothing) affineExprs
           if isAffineLoad then do
             let es = map fromJust affineExprs
-            indBs <- mapM (\e -> applyAffineExpr loc (Affine.Map (M.size vars) 0 [e])
-                           (L.sortBy (\a b -> compare (a^._2._1) (b^._2._1)) (M.toList vars) ^..traverse._2._2)) es
+            indBs <- mapM (applyAffineExpr loc vars) es
             return $ join (indexBs ^.. traverse . _1) ++
                       toIndices ^.. traverse . _1 ++ join indBs ++ [Left $ AST.Do $ Affine.store loc vId dstId (map lastId indBs)]
           else
@@ -682,8 +681,7 @@ transExpr (CIndex e index node) = do
               isAffineLoad = all (isn't _Nothing) affineExprs
           if isAffineLoad then do
             let es = map fromJust affineExprs
-            indBs <- mapM (\e -> applyAffineExpr loc (Affine.Map (M.size vars) 0 [e])
-                           (L.sortBy (\a b -> compare (a^._2._1) (b^._2._1)) (M.toList vars) ^..traverse._2._2)) es
+            indBs <- mapM (applyAffineExpr loc vars) es
             return $ join (indexBs ^.. traverse . _1) ++
                       toIndices ^.. traverse . _1 ++ join indBs ++ [Left $ id AST.:= Affine.load loc ty srcId (map lastId indBs)]
           else
