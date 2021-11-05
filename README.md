@@ -26,6 +26,7 @@ void matmul() {
   float output[N][M];
   for (int i=0; i<N; ++i) {
     for (int j=0; j<M; ++j) {
+      output[i][i] = 0.0;
       for (int k=0; k<K; ++k) {
         output[i][j] += lhs[i][k] * rhs[k][j];
       }
@@ -39,18 +40,20 @@ Output IR as below:
 ```mlir
 module  {
   func @matmul() attributes {llvm.emit_c_interface} {
-    %0 = memref.alloca() : memref<10x30xf32>
-    %1 = memref.alloca() : memref<30x20xf32>
-    %2 = memref.alloca() : memref<10x20xf32>
-    affine.for %arg0 = 0 to 10 {
-      affine.for %arg1 = 0 to 20 {
-        affine.for %arg2 = 0 to 30 {
-          %3 = affine.load %2[%arg0, %arg1] : memref<10x20xf32>
-          %4 = affine.load %0[%arg0, %arg2] : memref<10x30xf32>
-          %5 = affine.load %1[%arg2, %arg1] : memref<30x20xf32>
+    %cst = arith.constant 0.000000e+00 : f32
+    %0 = memref.alloca() : memref<1x3xf32>
+    %1 = memref.alloca() : memref<3x2xf32>
+    %2 = memref.alloca() : memref<1x2xf32>
+    affine.for %arg0 = 0 to 1 {
+      affine.for %arg1 = 0 to 2 {
+        affine.store %cst, %2[%arg0, %arg1] : memref<1x2xf32>
+        affine.for %arg2 = 0 to 3 {
+          %3 = affine.load %2[%arg0, %arg1] : memref<1x2xf32>
+          %4 = affine.load %0[%arg0, %arg2] : memref<1x3xf32>
+          %5 = affine.load %1[%arg2, %arg1] : memref<3x2xf32>
           %6 = arith.mulf %4, %5 : f32
           %7 = arith.addf %3, %6 : f32
-          affine.store %7, %2[%arg0, %arg1] : memref<10x20xf32>
+          affine.store %7, %2[%arg0, %arg1] : memref<1x2xf32>
         }
       }
     }
