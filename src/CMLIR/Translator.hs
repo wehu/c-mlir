@@ -208,7 +208,7 @@ translateToMLIR opts tu =
                   when (simplize opts) $ do
                     MLIR.addTransformsCanonicalizerPass pm
                   (== MLIR.Success) <$> MLIR.runPasses pm m
-     --MLIR.dump nativeOp
+     MLIR.dump nativeOp
      check <- (check &&) <$> MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
      if not . null $ jits opts then do
@@ -348,9 +348,12 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
   id <- freshName
   initBs <- mapM transInit init
   let (n, t) = varDecl (posOf node) var
-      isPtr = case orgTy of
-                (PtrType t _ _) -> True
-                _ -> False
+      (isPtr, isConst) = case orgTy of
+                (PtrType t quals _) -> (True, constant quals)
+                (DirectType _ quals _) -> (False, constant quals)
+                (ArrayType _ _ quals _) -> (False, constant quals)
+                (TypeDefType _ quals _) -> (False, constant quals)
+                _ -> (False, False)
       (mt, isAssignable) = 
         if isPtr then (AST.MemRefType [] (t ^._1) Nothing Nothing, True)
         else case t of
