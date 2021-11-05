@@ -63,6 +63,7 @@ data Env = Env {decls :: [Decl],
                 enums :: M.Map String Integer,
                 vars :: M.Map String (BU.ByteString, SType, Bool),
                 kernels :: M.Map String Bool,
+                inductions :: M.Map String Int,
                 idCounter :: Int}
 
 type EnvM = TravT Env Identity
@@ -79,6 +80,7 @@ initEnv = Env{decls = [],
               enums = M.empty,
               vars = M.empty,
               kernels = M.empty,
+              inductions = M.empty,
               idCounter = 0}
 
 --------------------------------------------------------------------
@@ -108,6 +110,9 @@ lookupVar name = do
   case v of
     Just v -> return v
     Nothing -> error $ "cannot find variable " ++ name
+
+addInduction name =
+  modifyUserState (\s -> s{inductions=M.insert name (M.size (inductions s)) (inductions s)})
 
 freshName :: EnvM BU.ByteString
 freshName = do
@@ -150,6 +155,11 @@ fromIndex loc i dstTy =
   if dstTy == AST.IndexType then return (Right i, i)
   else (\id -> (Left $ id AST.:= Arith.IndexCast loc dstTy i, id)) <$> freshName
 
+isStaticShapeMemref ty =
+  case ty of
+    (AST.MemRefType ds ty _ _) | all (isn't _Nothing) ds -> True
+    _ -> False
+
 data Options = Options {toLLVM :: Bool, dumpLoc :: Bool, jits :: [String], simplize :: Bool}
 
 defaultOptions = Options {toLLVM = False, dumpLoc = False, jits = [], simplize = True}
@@ -184,7 +194,7 @@ translateToMLIR opts tu =
                 -- run passes to llvm ir
                 Just m <- MLIR.moduleFromOperation nativeOp
                 MLIR.withPassManager ctx $ \pm -> do
-                  when (toLLVM opts) $ do 
+                  when (toLLVM opts) $ do
                     MLIR.addConvertAffineToStandardPass pm
                     MLIR.addConvertSCFToStandardPass  pm
                     MLIR.addConvertMemRefToLLVMPass   pm
@@ -194,7 +204,7 @@ translateToMLIR opts tu =
                   when (simplize opts) $ do
                     MLIR.addTransformsCanonicalizerPass pm
                   (== MLIR.Success) <$> MLIR.runPasses pm m
-     --MLIR.dump nativeOp
+     -- MLIR.dump nativeOp
      unless check $ exitWith (ExitFailure 1)
      if not . null $ jits opts then do
        -- run jit
@@ -344,7 +354,7 @@ transLocalDecl (ObjDef var init node) = do
           (^._1) <$> foldM (\(s, index) initBs -> do
                        id0 <- freshName
                        return (s++[Left $ id0 AST.:= constInt (getPos node) AST.IndexType index
-                                  ,Left $ AST.Do $ (MemRef.Store (lastId initBs) id
+                                  ,Left $ AST.Do $ (Affine.store (getPos node) (lastId initBs) id
                                                      (case mt of
                                                        AST.MemRefType [] t Nothing Nothing -> []
                                                        _ -> [id0])){
@@ -387,7 +397,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                 (Just stepE)
                 body node)
   -- try to translate for to affine.for
-  | ident0 == ident1 && 
+  | ident0 == ident1 &&
     (case stepE of
       (CAssign CAddAssOp (CVar ident2 _) step _) -> ident1 == ident2
       (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp -> ident1 == ident2
@@ -404,6 +414,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
         ty = AST.IntegerType AST.Signless 32
     (index, id) <- fromIndex loc varName ty
     addVar name (id, (ty, True), False)
+    addInduction name
     transBlock [(varName, AST.IndexType)]
       [b | isn't _Right index, (Left b) <- [index]]
       body
@@ -423,7 +434,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                 (Just stepE)
                 body node)
   -- try to translate for to scf.for
-  | ident0 == ident1 && 
+  | ident0 == ident1 &&
     (case stepE of
       (CAssign CAddAssOp (CVar ident2 _) step _) -> ident1 == ident2
       (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp -> ident1 == ident2
@@ -440,6 +451,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
         ty = AST.IntegerType AST.Signless 32
     (index, id) <- fromIndex loc varName ty
     addVar name (id, (ty, True), False)
+    addInduction name
     transBlock [(varName, AST.IndexType)]
       [b | isn't _Right index, (Left b) <- [index]]
       body
@@ -515,8 +527,8 @@ transExpr (CVar ident node) = do
             return ([Right id], (ty, sign))
           _ -> do
             id1 <- freshName
-            let ld = MemRef.Load ty id []
-                op1 = id1 AST.:= ld{AST.opLocation = getPos node}
+            let ld = Affine.load (getPos node) ty id []
+                op1 = id1 AST.:= ld
             return ([Left op1, Right id1], (ty, sign))
       else return ([Right id], (ty, sign))
 transExpr (CAssign op lhs rhs node) = do
@@ -541,27 +553,38 @@ transExpr (CAssign op lhs rhs node) = do
   if null indices then do
     id0 <- freshName
     let c0 = [Left $ id0 AST.:= constIndex0 (getPos node) | isDeref]
-        st = MemRef.Store rhsId id [id0 | isDeref]
+        st = Affine.store (getPos node) rhsId id [id0 | isDeref]
         op1 = AST.Do st{AST.opLocation = getPos node}
     return (srcBs ++ rhsBs ++ c0 ++ [Left op1], ty)
   else do
-    indexBs <- mapM transExpr indices
-    let indexIds = map lastId (indexBs ^.. traverse . _1)
-    toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
     let (dstTy, sign) = case ty of
                   (AST.MemRefType [Nothing] ty _ _, sign) -> (ty, sign)
                   (AST.MemRefType _ ty _ _, sign) -> (ty, sign)
                   _ -> unsupported (posOf src) src
     id1 <- freshName
-    let st = case ty of
+    st <- case ty of
                (ty@(AST.MemRefType [Nothing] _ _ ms), _) -> do
                  if isLocal
-                 then [Left $ id1 AST.:= (MemRef.Load ty id []){AST.opLocation = getPos node}
-                      ,Left $ AST.Do $ (MemRef.Store rhsId id1 (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
-                 else [Left $ AST.Do $ (MemRef.Store rhsId id (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
-               _ -> [Left $ AST.Do $ (MemRef.Store rhsId id (toIndices ^.. traverse . _2)){AST.opLocation = getPos node}]
-    return (srcBs ++ rhsBs ++ join (indexBs ^.. traverse . _1) ++
-            toIndices ^.. traverse . _1 ++ st, (dstTy, sign))
+                 then ([Left $ id1 AST.:= Affine.load (getPos node) ty id []] ++) <$> tryStore (getPos node) rhsId id1 indices
+                 else tryStore (getPos node) rhsId id indices
+               _ -> tryStore (getPos node) rhsId id indices
+    return (srcBs ++ rhsBs ++ st, (dstTy, sign))
+  where tryStore loc vId dstId indices = do
+          indexBs <- mapM transExpr indices
+          let indexIds = map lastId (indexBs ^.. traverse . _1)
+          toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
+          vars <- inductions <$> getUserState
+          let affineExprs = map (exprToAffineExpr vars) indices
+              isAffineLoad = all (isn't _Nothing) affineExprs
+          if isAffineLoad then do
+            let es = map fromJust affineExprs
+            indBs <- mapM (\e -> applyAffineExpr loc (Affine.Map (M.size vars) 0 [e])
+                           (map BU.fromString $ L.sortBy (\a b -> compare (snd a) (snd b)) (M.toList vars) ^..traverse._1)) es
+            return $ join (indexBs ^.. traverse . _1) ++
+                      toIndices ^.. traverse . _1 ++ join indBs ++ [Left $ AST.Do $ Affine.store loc vId dstId (map lastId indBs)]
+          else
+            return $ join (indexBs ^.. traverse . _1) ++
+                      toIndices ^.. traverse . _1 ++ [Left $ AST.Do (MemRef.Store vId dstId (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
 transExpr (CBinary bop lhs rhs node) = do
   (lhsBs, (lhsTy, lhsSign)) <- transExpr lhs
   (rhsBs, (rhsTy, rhsSign)) <- transExpr rhs
@@ -620,24 +643,36 @@ transExpr (CIndex e index node) = do
      case src of
        CVar ident _ -> (\(a, b, c) -> (a, b, [],c)) <$> lookupVar (identName ident)
        _ -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr src
-  indexBs <- mapM transExpr indices
-  let indexIds = map lastId (indexBs ^.. traverse . _1)
-  toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
+
   let ty = case srcTy of
              AST.MemRefType [Nothing] ty _ _ -> ty
              AST.MemRefType _ ty _ _ -> ty
              _ -> unsupported (posOf src) src
   id <- freshName
   id1 <- freshName
-  let ld = case srcTy of
+  ld <- case srcTy of
              AST.MemRefType [Nothing] ty _ ms ->
                if isLocal
-               then [Left $ id1 AST.:= (MemRef.Load srcTy srcId []){AST.opLocation=getPos node}
-                    ,Left $ id AST.:= (MemRef.Load ty id1 (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
-               else [Left $ id AST.:= (MemRef.Load ty srcId (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
-             _ -> [Left $ id AST.:= (MemRef.Load ty srcId (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
-  return (srcBs ++ join (indexBs ^.. traverse . _1) ++
-          toIndices ^.. traverse . _1 ++ ld ++ [Right id], (ty, sign))
+               then ([Left $ id1 AST.:= Affine.load (getPos node) srcTy srcId []] ++) <$> tryLoad (getPos node) ty srcTy id id1 indices
+               else tryLoad (getPos node) ty srcTy id srcId indices
+             _ -> tryLoad (getPos node) ty srcTy id srcId indices
+  return (srcBs ++ ld ++ [Right id], (ty, sign))
+  where tryLoad loc ty srcTy id srcId indices = do
+          indexBs <- mapM transExpr indices
+          let indexIds = map lastId (indexBs ^.. traverse . _1)
+          toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
+          vars <- inductions <$> getUserState
+          let affineExprs = map (exprToAffineExpr vars) indices
+              isAffineLoad = all (isn't _Nothing) affineExprs
+          if isAffineLoad then do
+            let es = map fromJust affineExprs
+            indBs <- mapM (\e -> applyAffineExpr loc (Affine.Map (M.size vars) 0 [e])
+                           (map BU.fromString $ L.sortBy (\a b -> compare (snd a) (snd b)) (M.toList vars) ^..traverse._1)) es
+            return $ join (indexBs ^.. traverse . _1) ++
+                      toIndices ^.. traverse . _1 ++ join indBs ++ [Left $ id AST.:= Affine.load loc ty srcId (map lastId indBs)]
+          else
+            return $ join (indexBs ^.. traverse . _1) ++
+                      toIndices ^.. traverse . _1 ++ [Left $ id AST.:= (MemRef.Load ty srcId (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
 transExpr c@(CCast t e node) = do
   (srcBs, (srcTy, srcSign)) <- transExpr e
   (dstTy, dstSign) <- type_ (posOf node) 0 <$> analyseTypeDecl t
@@ -686,12 +721,8 @@ transExpr c@(CCast t e node) = do
                         AST.MemRefType{} -> True
                         _ -> False
         isI8Memref ty = case ty of
-                          (AST.MemRefType [_] (AST.IntegerType AST.Signless 8) _ _) -> True 
+                          (AST.MemRefType [_] (AST.IntegerType AST.Signless 8) _ _) -> True
                           _ -> False
-        isStaticShapeMemref ty =
-          case ty of
-            (AST.MemRefType ds ty _ _) | all (isn't _Nothing) ds -> True
-            _ -> False                    
         bits ty = case ty of
                     AST.Float16Type -> 16
                     AST.Float32Type -> 32
@@ -775,9 +806,36 @@ transExpr (CUnary CIndOp e node) = do
                 AST.MemRefType [Nothing] t _ ms -> (t, ms)
                 _ -> unsupported (posOf node) e
       bs = [Left $ id0 AST.:= constIndex0 loc
-           ,Left $ id AST.:= (MemRef.Load resTy (lastId eBs) [id0]){AST.opLocation = loc}]
+           ,Left $ id AST.:= Affine.load loc resTy (lastId eBs) [id0]]
   return (eBs ++ bs ++ [Right id], (resTy, eSign))
 transExpr e = unsupported (posOf e) e
+
+-- | Translate to affine Expr
+exprToAffineExpr :: M.Map String Int -> CExpr -> Maybe Affine.Expr
+exprToAffineExpr vars (CVar ident node) =
+  let name = identName ident
+      v = M.lookup name vars
+   in fmap Affine.Dimension v
+exprToAffineExpr vars c@(CConst (CIntConst _ _)) =
+  fmap (Affine.Constant . fromIntegral) (intValue c)
+exprToAffineExpr vars (CBinary op lhs rhs node)
+  | op == CAddOp ||
+    op == CMulOp ||
+    op == CDivOp ||
+    op == CRmdOp = do
+  l <- exprToAffineExpr vars lhs
+  r <- exprToAffineExpr vars rhs
+  return $ (case op of
+              CAddOp -> Affine.Add
+              CMulOp -> Affine.Mul
+              CRmdOp -> Affine.Mod
+              CDivOp -> Affine.FloorDiv
+              _ -> unsupported (posOf node) op) l r
+exprToAffineExpr _ _ = Nothing
+
+applyAffineExpr loc e operands = do
+  id <- freshName
+  return [Left $ id AST.:= Affine.apply loc e operands, Right id]
 
 -- | Translate a constant expression
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)

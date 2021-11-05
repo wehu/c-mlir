@@ -9,7 +9,7 @@ import System.Environment
 import CMLIR.Parser
 import CMLIR.Translator 
 
-specialOpts = ["-jit", "-llvm", "-loc"]
+specialOpts = ["-jit", "-llvm", "-loc", "-noopt"]
 
 translate :: IO ()
 translate =
@@ -18,6 +18,7 @@ translate =
          (jits, cppOpts) = partition (isPrefixOf "-jit=") cppOpts'
          trOpts = defaultOptions{toLLVM = "-llvm" `elem` cppOpts || not (null jits),
                                  dumpLoc = "-loc" `elem` cppOpts,
-                                 jits = map (drop 5) jits} 
+                                 jits = map (drop 5) jits,
+                                 simplize = "-noopt" `notElem` cppOpts} 
      mapM_ (\file -> processFile (cppOpts \\ specialOpts) file
        >>= translateToMLIR trOpts >>= putStrLn) files

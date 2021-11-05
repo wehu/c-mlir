@@ -30,10 +30,10 @@ Output IR as below:
 module  {
   func @foo(%arg0: memref<?xf32, 2>, %arg1: memref<?xf32, 1>) attributes {cl.kernel = true, llvm.emit_c_interface} {
     affine.for %arg2 = 0 to 100 {
-      %0 = memref.load %arg1[%arg2] : memref<?xf32, 1>
-      memref.store %0, %arg0[%arg2] : memref<?xf32, 2>
-      %1 = memref.load %arg0[%arg2] : memref<?xf32, 2>
-      memref.store %1, %arg1[%arg2] : memref<?xf32, 1>
+      %0 = affine.load %arg1[%arg2] : memref<?xf32, 1>
+      affine.store %0, %arg0[%arg2] : memref<?xf32, 2>
+      %1 = affine.load %arg0[%arg2] : memref<?xf32, 2>
+      affine.store %1, %arg1[%arg2] : memref<?xf32, 1>
     }
     return
   }

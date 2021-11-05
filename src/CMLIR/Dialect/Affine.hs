@@ -28,3 +28,36 @@ yield loc args = Operation
   , opSuccessors = []
   , opAttributes = NoAttrs 
   }
+
+load :: Location -> Type -> Name -> [Name] -> Operation
+load loc ty src indices = Operation
+  { opName = "affine.load"
+  , opLocation = loc
+  , opResultTypes = Explicit [ty] 
+  , opOperands = src:indices
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = namedAttribute "map" (AffineMapAttr (Map (length indices) 0 [Dimension i| (i, _) <- zip [0..] indices]))
+  }
+
+store :: Location -> Name -> Name -> [Name] -> Operation
+store loc v dst indices = Operation
+  { opName = "affine.store"
+  , opLocation = loc
+  , opResultTypes = Explicit [] 
+  , opOperands = v:dst:indices
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = namedAttribute "map" (AffineMapAttr (Map (length indices) 0 [Dimension i| (i, _) <- zip [0..] indices]))
+  }
+
+apply :: Location -> Map -> [Name] -> Operation
+apply loc map operands = Operation
+  { opName = "affine.apply"
+  , opLocation = loc
+  , opResultTypes = Explicit [IndexType]
+  , opOperands = operands
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = namedAttribute "map" (AffineMapAttr map)
+  }
