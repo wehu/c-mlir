@@ -97,38 +97,30 @@ module  {
     %c0_i32 = arith.constant 0 : i32
     %cst = arith.constant 0.000000e+00 : f32
     %0 = call @get_global_id(%c0_i32) : (i32) -> i32
-    %1 = memref.alloca() : memref<i32>
-    affine.store %0, %1[] : memref<i32>
-    %2 = call @get_global_id(%c1_i32) : (i32) -> i32
-    %3 = memref.alloca() : memref<i32>
-    affine.store %2, %3[] : memref<i32>
-    %4 = memref.alloca() : memref<f32>
-    affine.store %cst, %4[] : memref<f32>
-    %5 = arith.index_cast %arg2 : i32 to index
-    scf.for %arg6 = %c0 to %5 step %c1 {
-      %12 = arith.index_cast %arg6 : index to i32
-      %13 = affine.load %4[] : memref<f32>
-      %14 = arith.muli %12, %arg0 : i32
-      %15 = affine.load %1[] : memref<i32>
-      %16 = arith.addi %14, %15 : i32
-      %17 = arith.index_cast %16 : i32 to index
-      %18 = memref.load %arg3[%17] : memref<?xf32, 2>
-      %19 = affine.load %3[] : memref<i32>
-      %20 = arith.muli %19, %arg2 : i32
-      %21 = arith.addi %20, %12 : i32
-      %22 = arith.index_cast %21 : i32 to index
-      %23 = memref.load %arg4[%22] : memref<?xf32, 2>
-      %24 = arith.mulf %18, %23 : f32
-      %25 = arith.addf %13, %24 : f32
-      affine.store %25, %4[] : memref<f32>
+    %1 = call @get_global_id(%c1_i32) : (i32) -> i32
+    %2 = memref.alloca() : memref<f32>
+    affine.store %cst, %2[] : memref<f32>
+    %3 = arith.index_cast %arg2 : i32 to index
+    scf.for %arg6 = %c0 to %3 step %c1 {
+      %8 = arith.index_cast %arg6 : index to i32
+      %9 = affine.load %2[] : memref<f32>
+      %10 = arith.muli %8, %arg0 : i32
+      %11 = arith.addi %10, %0 : i32
+      %12 = arith.index_cast %11 : i32 to index
+      %13 = memref.load %arg3[%12] : memref<?xf32, 2>
+      %14 = arith.muli %1, %arg2 : i32
+      %15 = arith.addi %14, %8 : i32
+      %16 = arith.index_cast %15 : i32 to index
+      %17 = memref.load %arg4[%16] : memref<?xf32, 2>
+      %18 = arith.mulf %13, %17 : f32
+      %19 = arith.addf %9, %18 : f32
+      affine.store %19, %2[] : memref<f32>
     }
-    %6 = affine.load %4[] : memref<f32>
-    %7 = affine.load %3[] : memref<i32>
-    %8 = arith.muli %7, %arg0 : i32
-    %9 = affine.load %1[] : memref<i32>
-    %10 = arith.addi %8, %9 : i32
-    %11 = arith.index_cast %10 : i32 to index
-    memref.store %6, %arg5[%11] : memref<?xf32, 2>
+    %4 = affine.load %2[] : memref<f32>
+    %5 = arith.muli %1, %arg0 : i32
+    %6 = arith.addi %5, %0 : i32
+    %7 = arith.index_cast %6 : i32 to index
+    memref.store %4, %arg5[%7] : memref<?xf32, 2>
     return
   }
 }

@@ -208,7 +208,7 @@ translateToMLIR opts tu =
                   when (simplize opts) $ do
                     MLIR.addTransformsCanonicalizerPass pm
                   (== MLIR.Success) <$> MLIR.runPasses pm m
-     MLIR.dump nativeOp
+     --MLIR.dump nativeOp
      check <- (check &&) <$> MLIR.verifyOperation nativeOp
      unless check $ exitWith (ExitFailure 1)
      if not . null $ jits opts then do
@@ -355,13 +355,15 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
                 (TypeDefType _ quals _) -> (False, constant quals)
                 _ -> (False, False)
       (mt, isAssignable) = 
-        if isPtr then (AST.MemRefType [] (t ^._1) Nothing Nothing, True)
+        if isPtr then (if isConst then t ^._1 else AST.MemRefType [] (t ^._1) Nothing Nothing, not isConst)
         else case t of
                (t@AST.MemRefType{}, _) -> (t, False)
-               (t, _) -> (AST.MemRefType [] t Nothing Nothing, True)
-      alloc = MemRef.alloca (getPos node) mt [] []
-      b = Left $ id AST.:= alloc
-  st <- if isn't _Nothing initBs then do
+               (t, _) -> (if isConst then t else AST.MemRefType [] t Nothing Nothing, not isConst)
+      (b, resId) = if isConst then 
+                     let id = lastId (join $ fromMaybe [[]] initBs)
+                      in (Right id, id)
+                    else (Left $ id AST.:= MemRef.alloca (getPos node) mt [] [], id)
+  st <- if isn't _Nothing initBs && not isConst then do
           (^._1) <$> foldM (\(s, index) initBs -> do
                        let ds = case mt of
                                   (AST.MemRefType ds _ _ _) -> ds
@@ -376,7 +378,7 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
                        ([], 0::Int)
                       (fromJust initBs)
         else return []
-  addVar n (id, t, isAssignable)
+  addVar n (resId, t, isAssignable)
   return $ join (fromMaybe [[]] initBs) ++ [b] ++ st
 
 -- | Translate an initalization expression
