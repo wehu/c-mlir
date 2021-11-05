@@ -9,7 +9,7 @@ Only a subset of c is supported based on the current semantics of MLIR dialects.
 * Arithmetic operations -> Arith dialect
 * A limited version of flow control(for/if) -> Affine/SCF dialect
 
-For `for`, if possiable, try to lower to `affine.for`, and if not, try to lower to `scf.for`, elsewise `scf.while`.
+For `for`, if possible, try to lower to `affine.for`, and if not, try to lower to `scf.for`, elsewise `scf.while`.
 
 For opencl, `__local` is mapped to memory space `1`, `__global` is mapped to memory space `2`.
 
