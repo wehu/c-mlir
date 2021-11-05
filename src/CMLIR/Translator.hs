@@ -299,7 +299,8 @@ transFunction f@(FunDef var stmt node) = do
   modifyUserState (\s -> s{funsWithBody=M.insert name ty (funsWithBody s)})
   underScope $ do
     argIds <- mapM (\(n, t) -> do id <- freshName; addVar n (id, t, False); return (id, t^._1)) [(a ^._1, a ^._2) | a <- params (posOf node) var]
-    --mapM_ addInduction [a ^._1 | a <- params (posOf node) var]
+    mapM_ (\(n, t, id) -> when (t == AST.IndexType) $ addInduction n id)
+       [ (p ^._1, p ^._2._1, id ^._1) | p <- params (posOf node) var | id <- argIds]
     b <- transBlock argIds [] stmt []
     let f = emitted $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
     isKernel <- M.lookup name . kernels <$> getUserState
@@ -379,6 +380,7 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
                       (fromJust initBs)
         else return []
   addVar n (resId, t, isAssignable)
+  when (isConst && t^._1 == AST.IndexType) $ addInduction n resId
   return $ join (fromMaybe [[]] initBs) ++ [b] ++ st
 
 -- | Translate an initalization expression
