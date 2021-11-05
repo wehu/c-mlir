@@ -304,9 +304,16 @@ transFunction f@(FunDef var stmt node) = do
                       id <- freshName
                       addVar n (id, t, False)
                       return (id, t^._1)) [(a ^._1, a ^._2) | a <- params (posOf node) var]
-    -- mapM_ (\(n, t, id) -> when (t == AST.IndexType) $ addInduction n id)
-    --   [ (p ^._1, p ^._2._1, id ^._1) | p <- params (posOf node) var | id <- argIds]
-    b <- transBlock argIds [] stmt []
+    indBs <- mapM (\(n, t, id) -> 
+                      if t == AST.IntegerType AST.Signless 32 then do
+                        (indBs, indId) <- toIndex (getPos node) id t
+                        addInduction n indId
+                        case indBs of
+                          Left indBs -> return [indBs]
+                          _ -> return []
+                      else return [])
+                    [ (p ^._1, p ^._2._1, id ^._1) | p <- params (posOf node) var | id <- argIds]
+    b <- transBlock argIds (join indBs) stmt []
     let f = emitted $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
     isKernel <- M.lookup name . kernels <$> getUserState
     let f' = if isKernel ^.non False then
@@ -386,8 +393,12 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
                       (fromJust initBs)
         else return []
   addVar n (resId, t, isAssignable)
-  -- when (isConst && t^._1 == AST.IndexType) $ addInduction n resId
-  return $ join (fromMaybe [[]] initBs) ++ [b] ++ st
+  -- indBs <- if isConst && t^._1 == AST.IntegerType AST.Signless 32 then do
+  --            (indBs, indId) <- toIndex (getPos node) resId (t^._1)
+  --            addInduction n indId
+  --            return [indBs]
+  --          else return []
+  return $ join (fromMaybe [[]] initBs) ++ [b] ++ st -- ++ indBs
 
 -- | Translate an initalization expression
 transInit :: CInitializer NodeInfo -> EnvM [[BindingOrName]]
@@ -474,7 +485,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
     let ty = AST.IntegerType AST.Signless 32
     (index, id) <- fromIndex loc varName ty
     addVar name (id, (ty, True), False)
-    -- addInduction name varName
+    addInduction name varName
     transBlock [(varName, AST.IndexType)]
       [b | isn't _Right index, (Left b) <- [index]]
       body
@@ -829,15 +840,17 @@ exprToAffineExpr vars (CVar ident node) =
    in fmap (\v -> Affine.Dimension $ v ^._1) v
 exprToAffineExpr vars c@(CConst (CIntConst _ _)) =
   fmap (Affine.Constant . fromIntegral) (intValue c)
-exprToAffineExpr vars (CBinary op lhs rhs node)
-  | op == CAddOp ||
-    op == CMulOp ||
+exprToAffineExpr vars (CBinary CAddOp lhs rhs node) = do
+  l <- exprToAffineExpr vars lhs
+  r <- exprToAffineExpr vars rhs
+  return $ Affine.Add l r
+exprToAffineExpr vars (CBinary op lhs rhs@(CConst (CIntConst _ _)) node)
+  | op == CMulOp ||
     op == CDivOp ||
     op == CRmdOp = do
   l <- exprToAffineExpr vars lhs
   r <- exprToAffineExpr vars rhs
   return $ (case op of
-              CAddOp -> Affine.Add
               CMulOp -> Affine.Mul
               CRmdOp -> Affine.Mod
               CDivOp -> Affine.FloorDiv

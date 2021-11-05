@@ -406,6 +406,7 @@ void foo(int arg0, float arg1) {
       |] `shouldBeTranslatedAs` [r|
 module  {
   func @foo(%arg0: i32, %arg1: f32) attributes {llvm.emit_c_interface} {
+    %0 = arith.index_cast %arg0 : i32 to index
     return
   }
 }
@@ -422,10 +423,12 @@ void foo(int arg0, float arg1) {
       |] `shouldBeTranslatedAs` [r|
 module  {
   func @bar(%arg0: i32) -> i32 attributes {llvm.emit_c_interface} {
+    %0 = arith.index_cast %arg0 : i32 to index
     return %arg0 : i32
   }
   func @foo(%arg0: i32, %arg1: f32) attributes {llvm.emit_c_interface} {
-    %0 = call @bar(%arg0) : (i32) -> i32
+    %0 = arith.index_cast %arg0 : i32 to index
+    %1 = call @bar(%arg0) : (i32) -> i32
     return
   }
 }
@@ -441,9 +444,10 @@ void foo(int arg0, float arg1) {
 module  {
   func private @bar(i32) -> i32
   func @foo(%arg0: i32, %arg1: f32) attributes {llvm.emit_c_interface} {
-    %0 = call @bar(%arg0) : (i32) -> i32
+    %0 = arith.index_cast %arg0 : i32 to index
+    %1 = call @bar(%arg0) : (i32) -> i32
     %c1_i32 = arith.constant 1 : i32
-    %1 = arith.addi %0, %c1_i32 : i32
+    %2 = arith.addi %1, %c1_i32 : i32
     return
   }
 }
@@ -1092,11 +1096,12 @@ void foo(enum test a) {
       |] `shouldBeTranslatedAs` [r|
 module  {
   func @foo(%arg0: i32) attributes {llvm.emit_c_interface} {
+    %0 = arith.index_cast %arg0 : i32 to index
     %c0_i32 = arith.constant 0 : i32
-    %0 = memref.alloca() : memref<i32>
-    affine.store %c0_i32, %0[] : memref<i32>
+    %1 = memref.alloca() : memref<i32>
+    affine.store %c0_i32, %1[] : memref<i32>
     %c1_i32 = arith.constant 1 : i32
-    affine.store %c1_i32, %0[] : memref<i32>
+    affine.store %c1_i32, %1[] : memref<i32>
     return
   }
 }
@@ -1244,22 +1249,24 @@ void foo(int i) {
 #map1 = affine_map<(d0) -> (d1)>
 module  {
   func @foo(%arg0: i32) attributes {llvm.emit_c_interface} {
-    %0 = memref.alloca() : memref<10xi32>
+    %0 = arith.index_cast %arg0 : i32 to index
+    %1 = memref.alloca() : memref<10xi32>
     %c1_i32 = arith.constant 1 : i32
-    %1 = arith.index_cast %arg0 : i32 to index
-    memref.store %c1_i32, %0[%1] : memref<10xi32>
+    %2 = arith.index_cast %arg0 : i32 to index
+    %3 = affine.apply #map0(%0)
+    affine.store %c1_i32, %1[%3] : memref<10xi32>
     affine.for %arg1 = 0 to 10 {
-      %2 = arith.index_cast %arg1 : index to i32
+      %4 = arith.index_cast %arg1 : index to i32
       %c2_i32 = arith.constant 2 : i32
-      %3 = arith.index_cast %2 : i32 to index
-      %4 = affine.apply #map0(%arg1)
-      affine.store %c2_i32, %0[%4] : memref<10xi32>
+      %5 = arith.index_cast %4 : i32 to index
+      %6 = affine.apply #map1(%arg1)
+      affine.store %c2_i32, %1[%6] : memref<10xi32>
       affine.for %arg2 = 0 to 10 {
-        %5 = arith.index_cast %arg2 : index to i32
+        %7 = arith.index_cast %arg2 : index to i32
         %c3_i32 = arith.constant 3 : i32
-        %6 = arith.index_cast %5 : i32 to index
-        %7 = affine.apply #map1(%arg2)
-        affine.store %c3_i32, %0[%7] : memref<10xi32>
+        %8 = arith.index_cast %7 : i32 to index
+        %9 = affine.apply #map1(%arg2)
+        affine.store %c3_i32, %1[%9] : memref<10xi32>
       }
     }
     return
