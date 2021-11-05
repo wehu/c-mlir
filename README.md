@@ -91,34 +91,32 @@ Output IR as below:
 module  {
   func private @get_global_id(i32) -> i32
   func @GEMM(%arg0: i32, %arg1: i32, %arg2: i32, %arg3: memref<?xf32, 2>, %arg4: memref<?xf32, 2>, %arg5: memref<?xf32, 2>) attributes {cl.kernel = true, llvm.emit_c_interface} {
-    %c1 = arith.constant 1 : index
-    %c0 = arith.constant 0 : index
+    %cst = arith.constant 0.000000e+00 : f32
     %c1_i32 = arith.constant 1 : i32
     %c0_i32 = arith.constant 0 : i32
-    %cst = arith.constant 0.000000e+00 : f32
-    %0 = call @get_global_id(%c0_i32) : (i32) -> i32
-    %1 = call @get_global_id(%c1_i32) : (i32) -> i32
-    %2 = memref.alloca() : memref<f32>
-    affine.store %cst, %2[] : memref<f32>
-    %3 = arith.index_cast %arg2 : i32 to index
-    scf.for %arg6 = %c0 to %3 step %c1 {
+    %0 = arith.index_cast %arg2 : i32 to index
+    %1 = call @get_global_id(%c0_i32) : (i32) -> i32
+    %2 = call @get_global_id(%c1_i32) : (i32) -> i32
+    %3 = memref.alloca() : memref<f32>
+    affine.store %cst, %3[] : memref<f32>
+    affine.for %arg6 = 0 to %0 {
       %8 = arith.index_cast %arg6 : index to i32
-      %9 = affine.load %2[] : memref<f32>
+      %9 = affine.load %3[] : memref<f32>
       %10 = arith.muli %8, %arg0 : i32
-      %11 = arith.addi %10, %0 : i32
+      %11 = arith.addi %10, %1 : i32
       %12 = arith.index_cast %11 : i32 to index
       %13 = memref.load %arg3[%12] : memref<?xf32, 2>
-      %14 = arith.muli %1, %arg2 : i32
+      %14 = arith.muli %2, %arg2 : i32
       %15 = arith.addi %14, %8 : i32
       %16 = arith.index_cast %15 : i32 to index
       %17 = memref.load %arg4[%16] : memref<?xf32, 2>
       %18 = arith.mulf %13, %17 : f32
       %19 = arith.addf %9, %18 : f32
-      affine.store %19, %2[] : memref<f32>
+      affine.store %19, %3[] : memref<f32>
     }
-    %4 = affine.load %2[] : memref<f32>
-    %5 = arith.muli %1, %arg0 : i32
-    %6 = arith.addi %5, %0 : i32
+    %4 = affine.load %3[] : memref<f32>
+    %5 = arith.muli %2, %arg0 : i32
+    %6 = arith.addi %5, %1 : i32
     %7 = arith.index_cast %6 : i32 to index
     memref.store %4, %arg5[%7] : memref<?xf32, 2>
     return

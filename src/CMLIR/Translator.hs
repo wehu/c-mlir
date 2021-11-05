@@ -430,9 +430,9 @@ transStmt (CExpr (Just e) node) = do
   return bs
 transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                               [(Just (CDeclr (Just ident0) [] Nothing [] _),
-                                Just (CInitExpr lb@(CConst _) _),
+                                Just (CInitExpr lb _),
                                 Nothing)] _))
-                (Just (CBinary CLeOp (CVar ident1 _) ub@(CConst _) _))
+                (Just (CBinary CLeOp (CVar ident1 _) ub _))
                 (Just stepE)
                 body node)
   -- try to translate for to affine.for
@@ -441,6 +441,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
       (CAssign CAddAssOp (CVar ident2 _) step _) -> ident1 == ident2
       (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp -> ident1 == ident2
       _ -> False) = do
+  vars <- inductions <$> getUserState 
   let name = identName ident0
       loc = getPos node
       step = case stepE of
@@ -448,61 +449,49 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
               (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp ->
                 CConst (CIntConst (cInteger 1) node)
               _ -> unsupported (posOf stepE) stepE
-  b <- underScope $ do
-    varName <- freshName
-    let ty = AST.IntegerType AST.Signless 32
-    (index, id) <- fromIndex loc varName ty
-    addVar name (id, (ty, True), False)
-    addInduction name varName
-    transBlock [(varName, AST.IndexType)]
-      [b | isn't _Right index, (Left b) <- [index]]
-      body
-      [AST.Do $ Affine.yield (getPos node) []]
-  let for = AST.Do $ Affine.for
-                  (getPos node)
-                  (fromIntegral $ fromJust $ intValue lb)
-                  (fromIntegral $ fromJust $ intValue ub)
-                  (fromIntegral $ fromJust $ intValue step)
-                  $ AST.Region [b]
-  return [Left for]
-transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
-                              [(Just (CDeclr (Just ident0) [] Nothing [] _),
-                                Just (CInitExpr lb _),
-                                Nothing)] _))
-                (Just (CBinary CLeOp (CVar ident1 _) ub _))
-                (Just stepE)
-                body node)
-  -- try to translate for to scf.for
-  | ident0 == ident1 &&
-    (case stepE of
-      (CAssign CAddAssOp (CVar ident2 _) step _) -> ident1 == ident2
-      (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp -> ident1 == ident2
-      _ -> False) = do
-  let name = identName ident0
-      loc = getPos node
-      step = case stepE of
-              (CAssign CAddAssOp (CVar ident2 _) step _) -> step
-              (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp ->
-                CConst (CIntConst (cInteger 1) node)
-              _ -> unsupported (posOf stepE) stepE
-  b <- underScope $ do
-    varName <- freshName
-    let ty = AST.IntegerType AST.Signless 32
-    (index, id) <- fromIndex loc varName ty
-    addVar name (id, (ty, True), False)
-    -- addInduction name varName
-    transBlock [(varName, AST.IndexType)]
-      [b | isn't _Right index, (Left b) <- [index]]
-      body
-      [AST.Do $ SCF.yield loc []]
-  (lbBs, (lbTy, _)) <- transExpr lb
-  (ubBs, (ubTy, _)) <- transExpr ub
-  (stepBs, (stepTy, _)) <- transExpr step
-  (lbB, lbId) <- toIndex loc (lastId lbBs) lbTy
-  (ubB, ubId) <- toIndex loc (lastId ubBs) ubTy
-  (stepB, stepId) <- toIndex loc (lastId stepBs) stepTy
-  let for = AST.Do $ SCF.for loc [] lbId ubId stepId [] $ AST.Region [b]
-  return $ lbBs ++ ubBs ++ stepBs ++ [lbB, ubB, stepB, Left for]
+      lbAE = exprToAffineExpr vars lb
+      ubAE = exprToAffineExpr vars ub
+  if isn't _Nothing lbAE && isn't _Nothing ubAE then do
+    lbInd <- applyAffineExpr loc (Affine.Map (M.size vars) 0 [fromJust lbAE])
+              (L.sortBy (\a b -> compare (a^._2._1) (b^._2._1)) (M.toList vars) ^..traverse._2._2)
+    ubInd <- applyAffineExpr loc (Affine.Map (M.size vars) 0 [fromJust ubAE])
+              (L.sortBy (\a b -> compare (a^._2._1) (b^._2._1)) (M.toList vars) ^..traverse._2._2)
+    b <- underScope $ do
+      varName <- freshName
+      let ty = AST.IntegerType AST.Signless 32
+      (index, id) <- fromIndex loc varName ty
+      addVar name (id, (ty, True), False)
+      addInduction name varName
+      transBlock [(varName, AST.IndexType)]
+        [b | isn't _Right index, (Left b) <- [index]]
+        body
+        [AST.Do $ Affine.yield (getPos node) []]
+    let for = AST.Do $ Affine.for
+                    (getPos node)
+                    (lastId lbInd)
+                    (lastId ubInd)
+                    (fromIntegral $ fromJust $ intValue step)
+                    $ AST.Region [b]
+    return $ lbInd ++ ubInd ++ [Left for]
+  else do
+    b <- underScope $ do
+      varName <- freshName
+      let ty = AST.IntegerType AST.Signless 32
+      (index, id) <- fromIndex loc varName ty
+      addVar name (id, (ty, True), False)
+      -- addInduction name varName
+      transBlock [(varName, AST.IndexType)]
+        [b | isn't _Right index, (Left b) <- [index]]
+        body
+        [AST.Do $ SCF.yield loc []]
+    (lbBs, (lbTy, _)) <- transExpr lb
+    (ubBs, (ubTy, _)) <- transExpr ub
+    (stepBs, (stepTy, _)) <- transExpr step
+    (lbB, lbId) <- toIndex loc (lastId lbBs) lbTy
+    (ubB, ubId) <- toIndex loc (lastId ubBs) ubTy
+    (stepB, stepId) <- toIndex loc (lastId stepBs) stepTy
+    let for = AST.Do $ SCF.for loc [] lbId ubId stepId [] $ AST.Region [b]
+    return $ lbBs ++ ubBs ++ stepBs ++ [lbB, ubB, stepB, Left for]
 transStmt (CFor init cond post body node) = underScope $ do
   -- try to translate for to scf.while
   let loc = getPos node
