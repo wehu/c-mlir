@@ -1098,7 +1098,20 @@ type_ tdefs pos ms (ArrayType t size quals attrs) =
    in case type_ tdefs pos ms t of
         (AST.MemRefType sizes t Nothing ms, sign) -> (AST.MemRefType (s:sizes) t Nothing ms, sign)
         (t, sign) -> (AST.MemRefType [s] t Nothing (Just msAttr), sign)
-type_ tdefs pos ms (TypeDefType (TypeDefRef ident t _) quals attrs) = type_ tdefs pos ms t
+type_ tdefs pos ms ty@(TypeDefType (TypeDefRef ident t _) quals attrs) = 
+  let name = identName ident
+      tdef = M.lookup name tdefs
+   in case tdef of
+        Just (TypeDef _ _ attrs _) -> 
+          let vsAttrs = getExtVectorAttrs attrs
+              (tt, sign) = type_ tdefs pos ms t
+           in if null vsAttrs then (tt, sign)
+              else (AST.VectorType vsAttrs tt, sign)
+        Nothing -> unsupported pos ty
+
+getExtVectorAttrs :: Attributes -> [Int]
+getExtVectorAttrs attrs = [fromIntegral $ fromJust $ intValue e| (Attr ident [e] node) <- attrs,
+                          identName ident == "__ext_vector_type__" && isn't _Nothing (intValue e)]
 
 arraySize :: ArraySize -> Maybe Int
 arraySize (UnknownArraySize static) =

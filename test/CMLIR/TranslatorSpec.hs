@@ -1897,226 +1897,230 @@ module  {
 }
       |]
 
---     it "can translate opencl vector type" $ do
---       [r|
--- typedef struct char2   char2;
--- typedef struct char3   char3;
--- typedef struct char4   char4;
--- typedef struct char8   char8;
--- typedef struct char16  char16;
--- typedef struct uchar2  uchar2;
--- typedef struct uchar3  uchar3;
--- typedef struct uchar4  uchar4;
--- typedef struct uchar8  uchar8;
--- typedef struct uchar16 uchar16;
--- 
--- typedef struct short2   short2;
--- typedef struct short3   short3;
--- typedef struct short4   short4;
--- typedef struct short8   short8;
--- typedef struct short16  short16;
--- typedef struct ushort2  ushort2;
--- typedef struct ushort3  ushort3;
--- typedef struct ushort4  ushort4;
--- typedef struct ushort8  ushort8;
--- typedef struct ushort16 ushort16;
--- 
--- typedef struct int2   int2;
--- typedef struct int3   int3;
--- typedef struct int4   int4;
--- typedef struct int8   int8;
--- typedef struct int16  int16;
--- typedef struct uint2  uint2;
--- typedef struct uint3  uint3;
--- typedef struct uint4  uint4;
--- typedef struct uint8  uint8;
--- typedef struct uint16 uint16;
--- 
--- typedef struct long2   long2;
--- typedef struct long3   long3;
--- typedef struct long4   long4;
--- typedef struct long8   long8;
--- typedef struct long16  long16;
--- typedef struct ulong2  ulong2;
--- typedef struct ulong3  ulong3;
--- typedef struct ulong4  ulong4;
--- typedef struct ulong8  ulong8;
--- typedef struct ulong16 ulong16;
--- 
--- typedef struct float2   float2;
--- typedef struct float3   float3;
--- typedef struct float4   float4;
--- typedef struct float8   float8;
--- typedef struct float16  float16;
--- 
--- typedef struct double2   double2;
--- typedef struct double3   double3;
--- typedef struct double4   double4;
--- typedef struct double8   double8;
--- typedef struct double16  double16;
--- 
--- void foo() {
---   char2 v0;
---   char4 v1;
---   char8 v2;
---   char16 v3;
---   uchar2 v4;
---   uchar4 v5;
---   uchar8 v6;
---   uchar16 v7;
--- 
---   short2 v9;
---   short4 v10;
---   short8 v11;
---   short16 v12;
---   ushort2 v13;
---   ushort4 v14;
---   ushort8 v15;
---   ushort16 v16;
--- 
---   int2 v17;
---   int4 v18;
---   int8 v19;
---   int16 v20;
---   uint2 v21;
---   uint4 v22;
---   uint8 v23;
---   uint16 v24;
--- 
---   long2 v25;
---   long4 v26;
---   long8 v27;
---   long16 v28;
---   ulong2 v29;
---   ulong4 v30;
---   ulong8 v31;
---   ulong16 v32;
--- 
---   float2 v33;
---   float4 v34;
---   float8 v35;
---   float16 v36;
---   double2 v37;
---   double4 v38;
---   double8 v39;
---   double16 v40;
--- 
---   char3 v41;
---   uchar3 v42;
---   short3 v43;
---   ushort3 v44;
---   int3 v45;
---   uint3 v46;
---   long3 v47;
---   ulong3 v48;
---   float3 v49;
---   double3 v50;
--- 
--- }
---       |] `shouldBeTranslatedAs` [r|
--- module  {
---   func @foo() attributes {llvm.emit_c_interface} {
---     %c0 = arith.constant 0 : index
---     %0 = memref.alloca(%c0) : memref<?xvector<2xi8>>
---     %c0_0 = arith.constant 0 : index
---     %1 = memref.alloca(%c0_0) : memref<?xvector<4xi8>>
---     %c0_1 = arith.constant 0 : index
---     %2 = memref.alloca(%c0_1) : memref<?xvector<8xi8>>
---     %c0_2 = arith.constant 0 : index
---     %3 = memref.alloca(%c0_2) : memref<?xvector<16xi8>>
---     %c0_3 = arith.constant 0 : index
---     %4 = memref.alloca(%c0_3) : memref<?xvector<2xi8>>
---     %c0_4 = arith.constant 0 : index
---     %5 = memref.alloca(%c0_4) : memref<?xvector<4xi8>>
---     %c0_5 = arith.constant 0 : index
---     %6 = memref.alloca(%c0_5) : memref<?xvector<8xi8>>
---     %c0_6 = arith.constant 0 : index
---     %7 = memref.alloca(%c0_6) : memref<?xvector<16xi8>>
---     %c0_7 = arith.constant 0 : index
---     %8 = memref.alloca(%c0_7) : memref<?xvector<2xi16>>
---     %c0_8 = arith.constant 0 : index
---     %9 = memref.alloca(%c0_8) : memref<?xvector<4xi16>>
---     %c0_9 = arith.constant 0 : index
---     %10 = memref.alloca(%c0_9) : memref<?xvector<8xi16>>
---     %c0_10 = arith.constant 0 : index
---     %11 = memref.alloca(%c0_10) : memref<?xvector<16xi16>>
---     %c0_11 = arith.constant 0 : index
---     %12 = memref.alloca(%c0_11) : memref<?xvector<2xi16>>
---     %c0_12 = arith.constant 0 : index
---     %13 = memref.alloca(%c0_12) : memref<?xvector<4xi16>>
---     %c0_13 = arith.constant 0 : index
---     %14 = memref.alloca(%c0_13) : memref<?xvector<8xi16>>
---     %c0_14 = arith.constant 0 : index
---     %15 = memref.alloca(%c0_14) : memref<?xvector<16xi16>>
---     %c0_15 = arith.constant 0 : index
---     %16 = memref.alloca(%c0_15) : memref<?xvector<2xi32>>
---     %c0_16 = arith.constant 0 : index
---     %17 = memref.alloca(%c0_16) : memref<?xvector<4xi32>>
---     %c0_17 = arith.constant 0 : index
---     %18 = memref.alloca(%c0_17) : memref<?xvector<8xi32>>
---     %c0_18 = arith.constant 0 : index
---     %19 = memref.alloca(%c0_18) : memref<?xvector<16xi32>>
---     %c0_19 = arith.constant 0 : index
---     %20 = memref.alloca(%c0_19) : memref<?xvector<2xi32>>
---     %c0_20 = arith.constant 0 : index
---     %21 = memref.alloca(%c0_20) : memref<?xvector<4xi32>>
---     %c0_21 = arith.constant 0 : index
---     %22 = memref.alloca(%c0_21) : memref<?xvector<8xi32>>
---     %c0_22 = arith.constant 0 : index
---     %23 = memref.alloca(%c0_22) : memref<?xvector<16xi32>>
---     %c0_23 = arith.constant 0 : index
---     %24 = memref.alloca(%c0_23) : memref<?xvector<2xi64>>
---     %c0_24 = arith.constant 0 : index
---     %25 = memref.alloca(%c0_24) : memref<?xvector<4xi64>>
---     %c0_25 = arith.constant 0 : index
---     %26 = memref.alloca(%c0_25) : memref<?xvector<8xi64>>
---     %c0_26 = arith.constant 0 : index
---     %27 = memref.alloca(%c0_26) : memref<?xvector<16xi64>>
---     %c0_27 = arith.constant 0 : index
---     %28 = memref.alloca(%c0_27) : memref<?xvector<2xi64>>
---     %c0_28 = arith.constant 0 : index
---     %29 = memref.alloca(%c0_28) : memref<?xvector<4xi64>>
---     %c0_29 = arith.constant 0 : index
---     %30 = memref.alloca(%c0_29) : memref<?xvector<8xi64>>
---     %c0_30 = arith.constant 0 : index
---     %31 = memref.alloca(%c0_30) : memref<?xvector<16xi64>>
---     %c0_31 = arith.constant 0 : index
---     %32 = memref.alloca(%c0_31) : memref<?xvector<2xf32>>
---     %c0_32 = arith.constant 0 : index
---     %33 = memref.alloca(%c0_32) : memref<?xvector<4xf32>>
---     %c0_33 = arith.constant 0 : index
---     %34 = memref.alloca(%c0_33) : memref<?xvector<8xf32>>
---     %c0_34 = arith.constant 0 : index
---     %35 = memref.alloca(%c0_34) : memref<?xvector<16xf32>>
---     %c0_35 = arith.constant 0 : index
---     %36 = memref.alloca(%c0_35) : memref<?xvector<2xf64>>
---     %c0_36 = arith.constant 0 : index
---     %37 = memref.alloca(%c0_36) : memref<?xvector<4xf64>>
---     %c0_37 = arith.constant 0 : index
---     %38 = memref.alloca(%c0_37) : memref<?xvector<8xf64>>
---     %c0_38 = arith.constant 0 : index
---     %39 = memref.alloca(%c0_38) : memref<?xvector<16xf64>>
---     %c0_39 = arith.constant 0 : index
---     %40 = memref.alloca(%c0_39) : memref<?xvector<3xi8>>
---     %c0_40 = arith.constant 0 : index
---     %41 = memref.alloca(%c0_40) : memref<?xvector<3xi8>>
---     %c0_41 = arith.constant 0 : index
---     %42 = memref.alloca(%c0_41) : memref<?xvector<3xi16>>
---     %c0_42 = arith.constant 0 : index
---     %43 = memref.alloca(%c0_42) : memref<?xvector<3xi16>>
---     %c0_43 = arith.constant 0 : index
---     %44 = memref.alloca(%c0_43) : memref<?xvector<3xi32>>
---     %c0_44 = arith.constant 0 : index
---     %45 = memref.alloca(%c0_44) : memref<?xvector<3xi32>>
---     %c0_45 = arith.constant 0 : index
---     %46 = memref.alloca(%c0_45) : memref<?xvector<3xi64>>
---     %c0_46 = arith.constant 0 : index
---     %47 = memref.alloca(%c0_46) : memref<?xvector<3xi64>>
---     %c0_47 = arith.constant 0 : index
---     %48 = memref.alloca(%c0_47) : memref<?xvector<3xf32>>
---     %c0_48 = arith.constant 0 : index
---     %49 = memref.alloca(%c0_48) : memref<?xvector<3xf32>>
---     return
---   }
--- }
---       |]
+    it "can translate opencl vector type" $ do
+      [r|
+typedef char char2 __attribute__((__ext_vector_type__(2)));
+typedef char char3 __attribute__((__ext_vector_type__(3)));
+typedef char char4 __attribute__((__ext_vector_type__(4)));
+typedef char char8 __attribute__((__ext_vector_type__(8)));
+typedef char char16 __attribute__((__ext_vector_type__(16)));
+
+typedef unsigned char uchar2 __attribute__((__ext_vector_type__(2)));
+typedef unsigned char uchar3 __attribute__((__ext_vector_type__(3)));
+typedef unsigned char uchar4 __attribute__((__ext_vector_type__(4)));
+typedef unsigned char uchar8 __attribute__((__ext_vector_type__(8)));
+typedef unsigned char uchar16 __attribute__((__ext_vector_type__(16)));
+
+typedef short short2 __attribute__((__ext_vector_type__(2)));
+typedef short short3 __attribute__((__ext_vector_type__(3)));
+typedef short short4 __attribute__((__ext_vector_type__(4)));
+typedef short short8 __attribute__((__ext_vector_type__(8)));
+typedef short short16 __attribute__((__ext_vector_type__(16)));
+
+typedef unsigned short ushort2 __attribute__((__ext_vector_type__(2)));
+typedef unsigned short ushort3 __attribute__((__ext_vector_type__(3)));
+typedef unsigned short ushort4 __attribute__((__ext_vector_type__(4)));
+typedef unsigned short ushort8 __attribute__((__ext_vector_type__(8)));
+typedef unsigned short ushort16 __attribute__((__ext_vector_type__(16)));
+
+typedef int int2 __attribute__((__ext_vector_type__(2)));
+typedef int int3 __attribute__((__ext_vector_type__(3)));
+typedef int int4 __attribute__((__ext_vector_type__(4)));
+typedef int int8 __attribute__((__ext_vector_type__(8)));
+typedef int int16 __attribute__((__ext_vector_type__(16)));
+
+typedef unsigned int uint2 __attribute__((__ext_vector_type__(2)));
+typedef unsigned int uint3 __attribute__((__ext_vector_type__(3)));
+typedef unsigned int uint4 __attribute__((__ext_vector_type__(4)));
+typedef unsigned int uint8 __attribute__((__ext_vector_type__(8)));
+typedef unsigned int uint16 __attribute__((__ext_vector_type__(16)));
+
+typedef long long2 __attribute__((__ext_vector_type__(2)));
+typedef long long3 __attribute__((__ext_vector_type__(3)));
+typedef long long4 __attribute__((__ext_vector_type__(4)));
+typedef long long8 __attribute__((__ext_vector_type__(8)));
+typedef long long16 __attribute__((__ext_vector_type__(16)));
+
+typedef unsigned long ulong2 __attribute__((__ext_vector_type__(2)));
+typedef unsigned long ulong3 __attribute__((__ext_vector_type__(3)));
+typedef unsigned long ulong4 __attribute__((__ext_vector_type__(4)));
+typedef unsigned long ulong8 __attribute__((__ext_vector_type__(8)));
+typedef unsigned long ulong16 __attribute__((__ext_vector_type__(16)));
+
+typedef float float2 __attribute__((__ext_vector_type__(2)));
+typedef float float3 __attribute__((__ext_vector_type__(3)));
+typedef float float4 __attribute__((__ext_vector_type__(4)));
+typedef float float8 __attribute__((__ext_vector_type__(8)));
+typedef float float16 __attribute__((__ext_vector_type__(16)));
+
+typedef double double2 __attribute__((__ext_vector_type__(2)));
+typedef double double3 __attribute__((__ext_vector_type__(3)));
+typedef double double4 __attribute__((__ext_vector_type__(4)));
+typedef double double8 __attribute__((__ext_vector_type__(8)));
+typedef double double16 __attribute__((__ext_vector_type__(16)));
+
+void foo() {
+  char2 v0;
+  char4 v1;
+  char8 v2;
+  char16 v3;
+  uchar2 v4;
+  uchar4 v5;
+  uchar8 v6;
+  uchar16 v7;
+
+  short2 v9;
+  short4 v10;
+  short8 v11;
+  short16 v12;
+  ushort2 v13;
+  ushort4 v14;
+  ushort8 v15;
+  ushort16 v16;
+
+  int2 v17;
+  int4 v18;
+  int8 v19;
+  int16 v20;
+  uint2 v21;
+  uint4 v22;
+  uint8 v23;
+  uint16 v24;
+
+  long2 v25;
+  long4 v26;
+  long8 v27;
+  long16 v28;
+  ulong2 v29;
+  ulong4 v30;
+  ulong8 v31;
+  ulong16 v32;
+
+  float2 v33;
+  float4 v34;
+  float8 v35;
+  float16 v36;
+  double2 v37;
+  double4 v38;
+  double8 v39;
+  double16 v40;
+
+  char3 v41;
+  uchar3 v42;
+  short3 v43;
+  ushort3 v44;
+  int3 v45;
+  uint3 v46;
+  long3 v47;
+  ulong3 v48;
+  float3 v49;
+  double3 v50;
+
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %c0 = arith.constant 0 : index
+    %0 = memref.alloca(%c0) : memref<?xvector<2xi8>>
+    %c0_0 = arith.constant 0 : index
+    %1 = memref.alloca(%c0_0) : memref<?xvector<4xi8>>
+    %c0_1 = arith.constant 0 : index
+    %2 = memref.alloca(%c0_1) : memref<?xvector<8xi8>>
+    %c0_2 = arith.constant 0 : index
+    %3 = memref.alloca(%c0_2) : memref<?xvector<16xi8>>
+    %c0_3 = arith.constant 0 : index
+    %4 = memref.alloca(%c0_3) : memref<?xvector<2xi8>>
+    %c0_4 = arith.constant 0 : index
+    %5 = memref.alloca(%c0_4) : memref<?xvector<4xi8>>
+    %c0_5 = arith.constant 0 : index
+    %6 = memref.alloca(%c0_5) : memref<?xvector<8xi8>>
+    %c0_6 = arith.constant 0 : index
+    %7 = memref.alloca(%c0_6) : memref<?xvector<16xi8>>
+    %c0_7 = arith.constant 0 : index
+    %8 = memref.alloca(%c0_7) : memref<?xvector<2xi16>>
+    %c0_8 = arith.constant 0 : index
+    %9 = memref.alloca(%c0_8) : memref<?xvector<4xi16>>
+    %c0_9 = arith.constant 0 : index
+    %10 = memref.alloca(%c0_9) : memref<?xvector<8xi16>>
+    %c0_10 = arith.constant 0 : index
+    %11 = memref.alloca(%c0_10) : memref<?xvector<16xi16>>
+    %c0_11 = arith.constant 0 : index
+    %12 = memref.alloca(%c0_11) : memref<?xvector<2xi16>>
+    %c0_12 = arith.constant 0 : index
+    %13 = memref.alloca(%c0_12) : memref<?xvector<4xi16>>
+    %c0_13 = arith.constant 0 : index
+    %14 = memref.alloca(%c0_13) : memref<?xvector<8xi16>>
+    %c0_14 = arith.constant 0 : index
+    %15 = memref.alloca(%c0_14) : memref<?xvector<16xi16>>
+    %c0_15 = arith.constant 0 : index
+    %16 = memref.alloca(%c0_15) : memref<?xvector<2xi32>>
+    %c0_16 = arith.constant 0 : index
+    %17 = memref.alloca(%c0_16) : memref<?xvector<4xi32>>
+    %c0_17 = arith.constant 0 : index
+    %18 = memref.alloca(%c0_17) : memref<?xvector<8xi32>>
+    %c0_18 = arith.constant 0 : index
+    %19 = memref.alloca(%c0_18) : memref<?xvector<16xi32>>
+    %c0_19 = arith.constant 0 : index
+    %20 = memref.alloca(%c0_19) : memref<?xvector<2xi32>>
+    %c0_20 = arith.constant 0 : index
+    %21 = memref.alloca(%c0_20) : memref<?xvector<4xi32>>
+    %c0_21 = arith.constant 0 : index
+    %22 = memref.alloca(%c0_21) : memref<?xvector<8xi32>>
+    %c0_22 = arith.constant 0 : index
+    %23 = memref.alloca(%c0_22) : memref<?xvector<16xi32>>
+    %c0_23 = arith.constant 0 : index
+    %24 = memref.alloca(%c0_23) : memref<?xvector<2xi64>>
+    %c0_24 = arith.constant 0 : index
+    %25 = memref.alloca(%c0_24) : memref<?xvector<4xi64>>
+    %c0_25 = arith.constant 0 : index
+    %26 = memref.alloca(%c0_25) : memref<?xvector<8xi64>>
+    %c0_26 = arith.constant 0 : index
+    %27 = memref.alloca(%c0_26) : memref<?xvector<16xi64>>
+    %c0_27 = arith.constant 0 : index
+    %28 = memref.alloca(%c0_27) : memref<?xvector<2xi64>>
+    %c0_28 = arith.constant 0 : index
+    %29 = memref.alloca(%c0_28) : memref<?xvector<4xi64>>
+    %c0_29 = arith.constant 0 : index
+    %30 = memref.alloca(%c0_29) : memref<?xvector<8xi64>>
+    %c0_30 = arith.constant 0 : index
+    %31 = memref.alloca(%c0_30) : memref<?xvector<16xi64>>
+    %c0_31 = arith.constant 0 : index
+    %32 = memref.alloca(%c0_31) : memref<?xvector<2xf32>>
+    %c0_32 = arith.constant 0 : index
+    %33 = memref.alloca(%c0_32) : memref<?xvector<4xf32>>
+    %c0_33 = arith.constant 0 : index
+    %34 = memref.alloca(%c0_33) : memref<?xvector<8xf32>>
+    %c0_34 = arith.constant 0 : index
+    %35 = memref.alloca(%c0_34) : memref<?xvector<16xf32>>
+    %c0_35 = arith.constant 0 : index
+    %36 = memref.alloca(%c0_35) : memref<?xvector<2xf64>>
+    %c0_36 = arith.constant 0 : index
+    %37 = memref.alloca(%c0_36) : memref<?xvector<4xf64>>
+    %c0_37 = arith.constant 0 : index
+    %38 = memref.alloca(%c0_37) : memref<?xvector<8xf64>>
+    %c0_38 = arith.constant 0 : index
+    %39 = memref.alloca(%c0_38) : memref<?xvector<16xf64>>
+    %c0_39 = arith.constant 0 : index
+    %40 = memref.alloca(%c0_39) : memref<?xvector<3xi8>>
+    %c0_40 = arith.constant 0 : index
+    %41 = memref.alloca(%c0_40) : memref<?xvector<3xi8>>
+    %c0_41 = arith.constant 0 : index
+    %42 = memref.alloca(%c0_41) : memref<?xvector<3xi16>>
+    %c0_42 = arith.constant 0 : index
+    %43 = memref.alloca(%c0_42) : memref<?xvector<3xi16>>
+    %c0_43 = arith.constant 0 : index
+    %44 = memref.alloca(%c0_43) : memref<?xvector<3xi32>>
+    %c0_44 = arith.constant 0 : index
+    %45 = memref.alloca(%c0_44) : memref<?xvector<3xi32>>
+    %c0_45 = arith.constant 0 : index
+    %46 = memref.alloca(%c0_45) : memref<?xvector<3xi64>>
+    %c0_46 = arith.constant 0 : index
+    %47 = memref.alloca(%c0_46) : memref<?xvector<3xi64>>
+    %c0_47 = arith.constant 0 : index
+    %48 = memref.alloca(%c0_47) : memref<?xvector<3xf32>>
+    %c0_48 = arith.constant 0 : index
+    %49 = memref.alloca(%c0_48) : memref<?xvector<3xf64>>
+    return
+  }
+}
+      |]
