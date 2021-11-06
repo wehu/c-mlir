@@ -22,6 +22,7 @@ import qualified CMLIR.Dialect.MemRef as MemRef
 import qualified MLIR.AST.Dialect.Affine as Affine
 import qualified CMLIR.Dialect.Affine as Affine
 import qualified CMLIR.Dialect.SCF as SCF
+import qualified CMLIR.Dialect.Vector as Vector
 
 import Language.C.Syntax.AST
 import Language.C.Analysis.AstAnalysis
@@ -841,6 +842,32 @@ transExpr c@(CCall (CVar ident _) [tag', size] node) | identName ident == "dma_w
                                            sizeId
     return (tagBs++join (tagIndBs^..traverse._1)++(tagToIndex^..traverse._1)++
             sizeBs++[sizeIndBs, Left dma], (tagTy, tagSign))
+transExpr c@(CCall (CVar ident _) [src', dst] node) | identName ident == "vload" = do
+  let loc = getPos node
+      (src, indices) = collectIndices src' []
+  (srcBs, (srcTy, srcSign)) <- transExpr src
+  indexBs <- mapM transExpr indices
+  toIndex <- mapM (\(b, (ty, _)) -> toIndex loc (lastId b) ty) indexBs
+  (dstBs, (dstTy, dstSign)) <- transExpr dst
+  let ty = case dstTy of
+             AST.MemRefType [Nothing] t _ _ -> t
+             _ -> error $ "vload expected a pointer to vector type" ++ show (posOf node)
+  id <- freshName
+  id0 <- freshName
+  let load = id AST.:= Vector.vload loc ty (lastId srcBs) (toIndex ^..traverse._2)
+      c0 = id0 AST.:= constIndex0 loc
+      st = AST.Do $ Affine.store loc id (lastId dstBs) [id0]
+  return (srcBs ++ join (indexBs ^..traverse._1) ++ toIndex ^..traverse._1++dstBs++
+          [Left load, Left c0, Left st, Right id], (ty, dstSign))
+transExpr c@(CCall (CVar ident _) [dst', v] node) | identName ident == "vstore" = do
+  let loc = getPos node
+      (dst, indices) = collectIndices dst' []
+  (dstBs, (dstTy, dstSign)) <- transExpr dst
+  indexBs <- mapM transExpr indices
+  toIndex <- mapM (\(b, (ty, _)) -> toIndex loc (lastId b) ty) indexBs
+  (vBs, (vTy, vSign)) <- transExpr v
+  let store = AST.Do $ Vector.vstore loc (lastId vBs) (lastId dstBs) (toIndex ^..traverse._2)
+  return (dstBs ++ join (indexBs ^..traverse._1) ++ toIndex ^..traverse._1++ vBs ++ [Left store], (vTy, vSign))
 transExpr c@(CCall (CVar ident _) args node) = do
   let name = identName ident
       loc = getPos node

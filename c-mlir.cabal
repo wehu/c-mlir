@@ -31,6 +31,7 @@ library
       CMLIR.Dialect.MemRef
       CMLIR.Dialect.SCF
       CMLIR.Dialect.Std
+      CMLIR.Dialect.Vector
       CMLIR.Parser
       CMLIR.Translator
   other-modules:

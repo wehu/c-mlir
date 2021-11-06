@@ -2161,3 +2161,34 @@ module  {
   }
 }
       |]
+    
+    it "can translate vector load/store" $ do
+      [r|
+typedef int int2 __attribute__((__ext_vector_type__(2)));
+
+void foo() {
+  int2 v0;
+  int v1[2];
+  vload(v1[0], &v0);
+  vstore(v1[0], v0);
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %c1 = arith.constant 1 : index
+    %0 = memref.alloca(%c1) : memref<?xvector<2xi32>>
+    %1 = memref.alloca() : memref<2xi32>
+    %c0_i32 = arith.constant 0 : i32
+    %2 = arith.index_cast %c0_i32 : i32 to index
+    %3 = vector.load %1[%2] : memref<2xi32>, vector<2xi32>
+    %c0 = arith.constant 0 : index
+    affine.store %3, %0[%c0] : memref<?xvector<2xi32>>
+    %c0_i32_0 = arith.constant 0 : i32
+    %4 = arith.index_cast %c0_i32_0 : i32 to index
+    %c0_1 = arith.constant 0 : index
+    %5 = affine.load %0[%c0_1] : memref<?xvector<2xi32>>
+    vector.store %5, %1[%4] : memref<2xi32>, vector<2xi32>
+    return
+  }
+}
+      |]
