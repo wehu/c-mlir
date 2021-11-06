@@ -146,6 +146,8 @@ lastId bs =
 -- | Helper to create constant zero
 constIndex0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
 
+constIndex1 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 1)
+
 constInt loc ty val = Arith.Constant loc ty (AST.IntegerAttr ty val)
 
 -- | Helper to collect an array access to memref access by indices
@@ -396,7 +398,7 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
                       in ([Right id], id)
                   | isArray = ([Left $ id AST.:= MemRef.alloca (getPos node) mt [] []], id)
                   | otherwise =
-                     ([Left $ id0 AST.:= constIndex0 (getPos node)
+                     ([Left $ id0 AST.:= constIndex1 (getPos node)
                       ,Left $ id AST.:= MemRef.alloca (getPos node) mt [id0] []], id)
   st <- if isn't _Nothing initBs && not isConst then do
           (^._1) <$> foldM (\(s, index) initBs -> do
