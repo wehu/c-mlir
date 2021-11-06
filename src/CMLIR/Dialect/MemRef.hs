@@ -63,3 +63,14 @@ view loc ty src offset sizes = Operation
   , opSuccessors = []
   , opAttributes = NoAttrs
   }
+
+copy :: Location -> Name -> Name -> Operation
+copy loc src dst = Operation
+  { opName = "memref.copy"
+  , opLocation = loc
+  , opResultTypes = Explicit []
+  , opOperands = [src, dst]
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = NoAttrs
+  }

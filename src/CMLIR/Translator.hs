@@ -753,7 +753,7 @@ transExpr c@(CCast t e node) = do
                     AST.Float64Type -> 64
                     AST.IntegerType _ bs -> bs
                     _ -> unsupported (posOf c) c
-transExpr (CCall (CVar ident _) args node) = do
+transExpr c@(CCall (CVar ident _) args node) = do
   let name = identName ident
       loc = getPos node
   argsBs <- mapM transExpr args
@@ -766,9 +766,16 @@ transExpr (CCall (CVar ident _) args node) = do
       let malloc = id AST.:= MemRef.alloc loc resTy [toId] []
       return (join (argsBs ^..traverse._1) ++ [toB] ++ [Left malloc, Right id], (resTy, sizeSign))
     "free" -> do
+      when (L.length argsBs /= 1) $ error $ "free expected 1 arguments" ++ show (posOf node)
       let (mB, (mTy, mSign)) = head argsBs
           free = AST.Do $ MemRef.dealloc loc (lastId mB)
       return (join (argsBs ^..traverse._1) ++ [Left free], (mTy, mSign))
+    "memcpy" -> do
+      when (L.length argsBs /= 2) $ error $ "memcpy expected 2 arguments" ++ show (posOf node)
+      let (dstB, (dstTy, dstSign)) = head argsBs
+          (srcB, (srcTy, srcSign)) = argsBs !! 1
+          copy = AST.Do $ MemRef.copy loc (lastId srcB) (lastId dstB)
+      return (join (argsBs ^..traverse._1) ++ [Left copy], (dstTy, dstSign))
     _ -> do
       (_, (ty, sign), _) <- lookupVar name
       let resTy = case ty of

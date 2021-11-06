@@ -1456,3 +1456,21 @@ module  {
   }
 }
       |]
+    
+    it "can translate memcpy" $ do
+      [r|
+void foo() {
+  int src[2];
+  int dst[2];
+  memcpy(dst, src);
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<2xi32>
+    %1 = memref.alloca() : memref<2xi32>
+    memref.copy %0, %1 : memref<2xi32> to memref<2xi32>
+    return
+  }
+}
+      |]
