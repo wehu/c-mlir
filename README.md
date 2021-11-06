@@ -235,6 +235,40 @@ module  {
 }
 ```
 
+### Vector type example
+
+```c
+typedef int int2 __attribute__((__ext_vector_type__(2)));
+
+void foo() {
+  int2 v0;
+  int v1[2];
+  vload(v1[0], &v0);
+  v0 += v0;
+  vstore(v1[0], v0);
+}
+```
+
+Output IR as below
+```mlir
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %c0 = arith.constant 0 : index
+    %0 = memref.alloca() : memref<1xvector<2xi32>>
+    %1 = memref.alloca() : memref<2xi32>
+    %2 = vector.load %1[%c0] : memref<2xi32>, vector<2xi32>
+    affine.store %2, %0[0] : memref<1xvector<2xi32>>
+    %3 = affine.load %0[0] : memref<1xvector<2xi32>>
+    %4 = affine.load %0[0] : memref<1xvector<2xi32>>
+    %5 = arith.addi %3, %4 : vector<2xi32>
+    affine.store %5, %0[0] : memref<1xvector<2xi32>>
+    %6 = affine.load %0[0] : memref<1xvector<2xi32>>
+    vector.store %6, %1[%c0] : memref<2xi32>, vector<2xi32>
+    return
+  }
+}
+```
+
 ## Install
 
 Install stack
