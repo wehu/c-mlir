@@ -778,6 +778,21 @@ transExpr c@(CCall (CVar ident _) [src', dst', tag', size] node) | identName ide
                                            (lastId sizeBs)
     return (srcBs++join srcInds++dstBs++join dstInds++tagBs++join tagInds++sizeBs++[Left dma], (dstTy, dstSign))
   else unsupported (posOf node) c
+transExpr c@(CCall (CVar ident _) [tag', size] node) | identName ident == "dma_wait" = do
+  let loc = getPos node
+      (tag, tagIndices) = collectIndices tag' []
+  when (L.length tagIndices /= 1) $ error $ "dma_wait expected 1 index for tag" ++ show (posOf node)
+  (tagBs, (tagTy, tagSign)) <- transExpr tag
+  (sizeBs, (sizeTy, sizeSign)) <- transExpr size
+  ds <- affineDimensions <$> getUserState 
+  syms <- affineSymbols <$> getUserState 
+  let tagIndexAEs = map (exprToAffineExpr ds syms) tagIndices
+  if all (isn't _Nothing) tagIndexAEs then do
+    tagInds <- mapM (applyAffineExpr loc ds syms . fst . fromJust) tagIndexAEs
+    let dma = AST.Do $ Affine.dmaWait loc (lastId tagBs) (lastId $ head tagInds)
+                                          (lastId sizeBs)
+    return (tagBs++join tagInds++sizeBs++[Left dma], (tagTy, tagSign))
+  else unsupported (posOf node) c
 transExpr c@(CCall (CVar ident _) args node) = do
   let name = identName ident
       loc = getPos node

@@ -74,3 +74,14 @@ dmaStart loc src srcIndices dst dstIndices tag tagIndex size = Operation
                    namedAttribute "dst_map" (AffineMapAttr (Map (length dstIndices) 0 [Dimension i| (i, _) <- zip [0..] dstIndices])) <>
                    namedAttribute "tag_map" (AffineMapAttr (Map 1 0 [Dimension 0]))
   }
+
+dmaWait :: Location -> Name -> Name -> Name -> Operation 
+dmaWait loc tag tagIndex size = Operation
+  { opName = "affine.dma_wait"
+  , opLocation = loc
+  , opResultTypes = Explicit []
+  , opOperands = [tag, tagIndex, size]
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = namedAttribute "tag_map" (AffineMapAttr (Map 1 0 [Dimension 0]))
+  }

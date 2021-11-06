@@ -1499,3 +1499,22 @@ module  {
   }
 }
       |]
+    
+    it "can translate dma_wait" $ do
+      [r|
+void foo() {
+  int tag[1];
+  dma_wait(tag[1], 1);
+}
+      |] `shouldBeTranslatedAs` [r|
+#map = affine_map<() -> (1)>
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<1xi32>
+    %1 = affine.apply #map()
+    %c1_i32 = arith.constant 1 : i32
+    affine.dma_wait %0[%1], %c1_i32 : memref<1xi32>
+    return
+  }
+}
+      |]
