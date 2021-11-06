@@ -1576,6 +1576,50 @@ module  {
   }
 }
       |]
+    
+    it "can translate nested scope" $ do
+      [r|
+void foo() {
+  int v0;
+  int v1;
+  {
+    int v0;
+    int v1;
+    v1;
+  }
+  for (int i=0; i<10; ++i) {
+    {
+      int v1;
+      v1;
+    }
+  }
+}
+      |] `shouldBeTranslatedAs` [r|
+#map0 = affine_map<() -> (0)>
+#map1 = affine_map<() -> (10)>
+#map2 = affine_map<(d0) -> (d0)>
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<i32>
+    %1 = memref.alloca() : memref<i32>
+    memref.alloca_scope  {
+      %4 = memref.alloca() : memref<i32>
+      %5 = memref.alloca() : memref<i32>
+      %6 = affine.load %5[] : memref<i32>
+    }
+    %2 = affine.apply #map0()
+    %3 = affine.apply #map1()
+    affine.for %arg0 = #map2(%2) to #map2(%3) {
+      %4 = arith.index_cast %arg0 : index to i32
+      memref.alloca_scope  {
+        %5 = memref.alloca() : memref<i32>
+        %6 = affine.load %5[] : memref<i32>
+      }
+    }
+    return
+  }
+}
+      |]
 
     it "can translate opencl vector type" $ do
       [r|

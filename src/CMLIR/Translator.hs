@@ -543,6 +543,10 @@ transStmt (CIf cond t Nothing node) = do
   tb <- underScope $ transBlock [] [] t [AST.Do $ SCF.yield loc []]
   let if_ = AST.Do $ SCF.ifelse loc [] (lastId condBs) (AST.Region [tb]) (AST.Region [])
   return $ condBs ++ [Left if_]
+transStmt s@(CCompound labels items node) = do
+  let loc = getPos node
+  b <- underScope $ transBlock [] [] s [AST.Do $ MemRef.allocaScopeReturn loc [] []]
+  return [Left $ AST.Do $ MemRef.allocaScope loc (AST.Region [b])]
 transStmt e = unsupported (posOf e) e
 
 -- | Translate an expression

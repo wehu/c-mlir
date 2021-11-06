@@ -96,3 +96,25 @@ dmaWait loc tag tagIndices size = Operation
   , opSuccessors = []
   , opAttributes = NoAttrs
   }
+
+allocaScope :: Location -> Region -> Operation
+allocaScope loc body = Operation
+  { opName = "memref.alloca_scope"
+  , opLocation = loc
+  , opResultTypes = Explicit []
+  , opOperands = []
+  , opRegions = [body]
+  , opSuccessors = []
+  , opAttributes = NoAttrs
+  }
+
+allocaScopeReturn :: Location -> [Type] -> [Name] -> Operation
+allocaScopeReturn loc types args = Operation
+  { opName = "memref.alloca_scope.return"
+  , opLocation = loc
+  , opResultTypes = Explicit types
+  , opOperands = args
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = NoAttrs
+  }
