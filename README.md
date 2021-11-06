@@ -94,31 +94,24 @@ module  {
     %cst = arith.constant 0.000000e+00 : f32
     %c1_i32 = arith.constant 1 : i32
     %c0_i32 = arith.constant 0 : i32
-    %0 = arith.index_cast %arg2 : i32 to index
-    %1 = call @get_global_id(%c0_i32) : (i32) -> i32
-    %2 = call @get_global_id(%c1_i32) : (i32) -> i32
-    %3 = memref.alloca() : memref<f32>
-    affine.store %cst, %3[] : memref<f32>
-    affine.for %arg6 = 0 to %0 {
-      %8 = arith.index_cast %arg6 : index to i32
-      %9 = affine.load %3[] : memref<f32>
-      %10 = arith.muli %8, %arg0 : i32
-      %11 = arith.addi %10, %1 : i32
-      %12 = arith.index_cast %11 : i32 to index
-      %13 = memref.load %arg3[%12] : memref<?xf32, 2>
-      %14 = arith.muli %2, %arg2 : i32
-      %15 = arith.addi %14, %8 : i32
-      %16 = arith.index_cast %15 : i32 to index
-      %17 = memref.load %arg4[%16] : memref<?xf32, 2>
-      %18 = arith.mulf %13, %17 : f32
-      %19 = arith.addf %9, %18 : f32
-      affine.store %19, %3[] : memref<f32>
+    %0 = arith.index_cast %arg0 : i32 to index
+    %1 = arith.index_cast %arg2 : i32 to index
+    %2 = call @get_global_id(%c0_i32) : (i32) -> i32
+    %3 = arith.index_cast %2 : i32 to index
+    %4 = call @get_global_id(%c1_i32) : (i32) -> i32
+    %5 = arith.index_cast %4 : i32 to index
+    %6 = memref.alloca() : memref<f32>
+    affine.store %cst, %6[] : memref<f32>
+    affine.for %arg6 = 0 to %1 {
+      %8 = affine.load %6[] : memref<f32>
+      %9 = affine.load %arg3[%arg6 * symbol(%0) + symbol(%3)] : memref<?xf32, 2>
+      %10 = affine.load %arg4[%arg6 + symbol(%5) * symbol(%1)] : memref<?xf32, 2>
+      %11 = arith.mulf %9, %10 : f32
+      %12 = arith.addf %8, %11 : f32
+      affine.store %12, %6[] : memref<f32>
     }
-    %4 = affine.load %3[] : memref<f32>
-    %5 = arith.muli %2, %arg0 : i32
-    %6 = arith.addi %5, %1 : i32
-    %7 = arith.index_cast %6 : i32 to index
-    memref.store %4, %arg5[%7] : memref<?xf32, 2>
+    %7 = affine.load %6[] : memref<f32>
+    affine.store %7, %arg5[symbol(%5) * symbol(%0) + symbol(%3)] : memref<?xf32, 2>
     return
   }
 }

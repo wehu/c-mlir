@@ -858,14 +858,18 @@ exprToAffineExpr ds syms (CBinary CAddOp lhs rhs node) = do
   (l, lDsc) <- exprToAffineExpr ds syms lhs
   (r, rDsc) <- exprToAffineExpr ds syms rhs
   return (Affine.Add l r, inferDsc lDsc rDsc)
-exprToAffineExpr ds syms (CBinary op lhs rhs@(CConst (CIntConst _ _)) node)
-  | op == CMulOp ||
-    op == CDivOp ||
+exprToAffineExpr ds syms (CBinary CMulOp lhs rhs node) = do
+  (l, lDsc) <- exprToAffineExpr ds syms lhs
+  (r, rDsc) <- exprToAffineExpr ds syms rhs
+  if lDsc == ADimension && rDsc == ADimension then Nothing
+  else return (Affine.Mul l r, inferDsc lDsc rDsc)
+exprToAffineExpr ds syms (CBinary op lhs rhs node)
+  | op == CDivOp ||
     op == CRmdOp = do
   (l, lDsc) <- exprToAffineExpr ds syms lhs
   (r, rDsc) <- exprToAffineExpr ds syms rhs
-  return ((case op of
-              CMulOp -> Affine.Mul
+  if rDsc == ADimension then Nothing
+  else return ((case op of
               CRmdOp -> Affine.Mod
               CDivOp -> Affine.FloorDiv
               _ -> unsupported (posOf node) op) l r, inferDsc lDsc rDsc)
