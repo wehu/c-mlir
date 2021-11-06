@@ -772,10 +772,10 @@ transExpr (CCall (CVar ident _) args node) = do
     _ -> do
       (_, (ty, sign), _) <- lookupVar name
       let resTy = case ty of
-                    AST.FunctionType _ [resTy] -> resTy
+                    AST.FunctionType _ resTy -> resTy
                     _ -> error "expected a function type"
       let call = id AST.:= Std.call loc resTy (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
-      return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (resTy, sign))
+      return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (if null resTy then AST.NoneType else head resTy, sign))
 transExpr (CUnary CPreIncOp e node) = do
   let const1 = CConst (CIntConst (cInteger 1) node)
   (incBs, _) <- transExpr (CAssign CAddAssOp e const1 node)
