@@ -2192,3 +2192,37 @@ module  {
   }
 }
       |]
+    
+    it "can translate string literal" $ do
+      [r|
+void foo() {
+  char *v = "aaa";
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %cst = arith.constant dense<97> : vector<3xi8>
+    %c1 = arith.constant 1 : index
+    %c0 = arith.constant 0 : index
+    %0 = memref.alloca(%c1) : memref<?xi8>
+    vector.store %cst, %0[%c0] : memref<?xi8>, vector<3xi8>
+    return
+  }
+}
+
+➜  c-mlir git:(master) ✗ stack run -- 2.c -noopt 
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %cst = arith.constant dense<97> : vector<3xi8>
+    %c3 = arith.constant 3 : index
+    %c0 = arith.constant 0 : index
+    %0 = memref.alloca(%c3) : memref<?xi8>
+    vector.store %cst, %0[%c0] : memref<?xi8>, vector<3xi8>
+    %c1 = arith.constant 1 : index
+    %1 = memref.alloca(%c1) : memref<?xmemref<?xi8>>
+    %c0_0 = arith.constant 0 : index
+    affine.store %0, %1[%c0_0] : memref<?xmemref<?xi8>>
+    return
+  }
+}
+      |]

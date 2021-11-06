@@ -41,6 +41,7 @@ import Control.Monad.IO.Class
 import Control.Lens
 import Data.Maybe
 import Data.Int
+import Data.Array.IArray
 import qualified Data.Vector.Storable as V
 import Data.Char (ord)
 import qualified Data.List as L
@@ -1049,12 +1050,21 @@ transFloat (CFloat str) loc = do
 
 -- | Translate a string literal
 transStr :: CString -> AST.Location -> EnvM ([BindingOrName], SType)
-transStr s@(CString str _) loc = error $ "unsupported for string " ++ str
---  id <- freshName
---  let ty = AST.VectorType [length str] (AST.IntegerType AST.Signless 8)
---      cs = AST.DenseElementsAttr ty $
---             AST.DenseUInt8 $ listArray (0 :: Int, (length str)-1) $ fromIntegral . ord <$> str
---  return ([Left $ id AST.:= Arith.Constant loc ty cs], (ty, True))
+transStr s@(CString str _) loc = do
+  id <- freshName
+  id0 <- freshName
+  id1 <- freshName
+  id2 <- freshName
+  let ty = AST.VectorType [L.length str] (AST.IntegerType AST.Signless 8)
+      cs = AST.DenseElementsAttr ty $
+             AST.DenseUInt8 $ listArray (0 :: Int, L.length str-1) $ fromIntegral . ord <$> str
+      pTy = AST.MemRefType [Nothing] (AST.IntegerType AST.Signless 8) Nothing Nothing
+      c = id0 AST.:= Arith.Constant loc ty cs
+      size = id1 AST.:= constInt loc AST.IndexType (L.length str)
+      c0 = id2 AST.:= constIndex0 loc
+      m = id AST.:= MemRef.alloca loc pTy [id1] []
+      st = AST.Do $ Vector.vstore loc id0 id [id2]
+  return ([Left c, Left size, Left c0, Left m, Left st, Right id], (pTy, True))
 
 ------------------------------------------------------------------------------
 -- AST Handlers
