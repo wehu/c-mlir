@@ -4,6 +4,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -Wno-overlapping-patterns #-}
 module CMLIR.Translator where
 
 import qualified MLIR.AST.Builder as AST
@@ -353,7 +354,7 @@ transBlock args _ s _ = unsupported (posOf s) s
 -- | Translate a statement in block
 transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [BindingOrName]
 transBlockItem (CBlockStmt s) = transStmt s
-transBlockItem (CBlockDecl (CDecl _ ds node)) = do
+transBlockItem (CBlockDecl (CDecl q ds node)) = do
   join <$> mapM (\d -> do
     case d of
       (Just decl, _, _) -> do
@@ -1058,9 +1059,50 @@ type_ pos ms ty@(DirectType name quals attrs) =
     TyFloating (id -> TyFloatN n _) -> unsupported pos ty
     TyComplex t -> let (ct, sign) = type_ pos ms (DirectType (TyFloating t) quals attrs)
                     in (AST.ComplexType ct, sign)
-    TyComp ref -> unsupported pos ty
     TyEnum ref -> (AST.IntegerType AST.Signless 32, True)
     TyBuiltin _ -> unsupported pos ty
+    TyComp (CompTypeRef ref StructTag _)
+      | show (pretty ref) == "char2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 8), True)
+      | show (pretty ref) == "char4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 8), True)
+      | show (pretty ref) == "char8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 8), True)
+      | show (pretty ref) == "char16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 8), True)
+      | show (pretty ref) == "uchar2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 8), False)
+      | show (pretty ref) == "uchar4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 8), False)
+      | show (pretty ref) == "uchar8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 8), False)
+      | show (pretty ref) == "uchar16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 8), False)
+      | show (pretty ref) == "short2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 16), True)
+      | show (pretty ref) == "short4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 16), True)
+      | show (pretty ref) == "short8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 16), True)
+      | show (pretty ref) == "short16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 16), True)
+      | show (pretty ref) == "ushort2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 16), False)
+      | show (pretty ref) == "ushort4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 16), False)
+      | show (pretty ref) == "ushort8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 16), False)
+      | show (pretty ref) == "ushort16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 16), False)
+      | show (pretty ref) == "int2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 32), True)
+      | show (pretty ref) == "int4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 32), True)
+      | show (pretty ref) == "int8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 32), True)
+      | show (pretty ref) == "int16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 32), True)
+      | show (pretty ref) == "uint2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 32), False)
+      | show (pretty ref) == "uint4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 32), False)
+      | show (pretty ref) == "uint8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 32), False)
+      | show (pretty ref) == "uint16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 32), False)
+      | show (pretty ref) == "long2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 64), True)
+      | show (pretty ref) == "long4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 64), True)
+      | show (pretty ref) == "long8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 64), True)
+      | show (pretty ref) == "long16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 64), True)
+      | show (pretty ref) == "ulong2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 64), False)
+      | show (pretty ref) == "ulong4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 64), False)
+      | show (pretty ref) == "ulong8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 64), False)
+      | show (pretty ref) == "ulong16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 64), False)
+      | show (pretty ref) == "float2" -> (AST.VectorType [2] AST.Float32Type, True)
+      | show (pretty ref) == "float4" -> (AST.VectorType [4] AST.Float32Type, True)
+      | show (pretty ref) == "float8" -> (AST.VectorType [8] AST.Float32Type, True)
+      | show (pretty ref) == "float16" -> (AST.VectorType [16] AST.Float32Type, True)
+      | show (pretty ref) == "double2" -> (AST.VectorType [2] AST.Float64Type, True)
+      | show (pretty ref) == "double4" -> (AST.VectorType [4] AST.Float64Type, True)
+      | show (pretty ref) == "double8" -> (AST.VectorType [8] AST.Float64Type, True)
+      | show (pretty ref) == "double16" -> (AST.VectorType [16] AST.Float64Type, True)
+      | otherwise -> unsupported pos ty
     _ -> unsupported pos ty
 type_ pos ms ty@(PtrType t quals attrs) =
   let (tt, sign) = type_ pos ms t

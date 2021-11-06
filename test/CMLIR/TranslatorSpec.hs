@@ -1576,3 +1576,146 @@ module  {
   }
 }
       |]
+
+    it "can translate opencl vector type" $ do
+      [r|
+typedef struct char2   char2;
+typedef struct char4   char4;
+typedef struct char8   char8;
+typedef struct char16  char16;
+typedef struct uchar2  uchar2;
+typedef struct uchar4  uchar4;
+typedef struct uchar8  uchar8;
+typedef struct uchar16 uchar16;
+
+typedef struct short2   short2;
+typedef struct short4   short4;
+typedef struct short8   short8;
+typedef struct short16  short16;
+typedef struct ushort2  ushort2;
+typedef struct ushort4  ushort4;
+typedef struct ushort8  ushort8;
+typedef struct ushort16 ushort16;
+
+typedef struct int2   int2;
+typedef struct int4   int4;
+typedef struct int8   int8;
+typedef struct int16  int16;
+typedef struct uint2  uint2;
+typedef struct uint4  uint4;
+typedef struct uint8  uint8;
+typedef struct uint16 uint16;
+
+typedef struct long2   long2;
+typedef struct long4   long4;
+typedef struct long8   long8;
+typedef struct long16  long16;
+typedef struct ulong2  ulong2;
+typedef struct ulong4  ulong4;
+typedef struct ulong8  ulong8;
+typedef struct ulong16 ulong16;
+
+typedef struct float2   float2;
+typedef struct float4   float4;
+typedef struct float8   float8;
+typedef struct float16  float16;
+
+typedef struct double2   double2;
+typedef struct double4   double4;
+typedef struct double8   double8;
+typedef struct double16  double16;
+
+void foo() {
+  char2 v0;
+  char4 v1;
+  char8 v2;
+  char16 v3;
+  uchar2 v4;
+  uchar4 v5;
+  uchar8 v6;
+  uchar16 v7;
+
+  short2 v9;
+  short4 v10;
+  short8 v11;
+  short16 v12;
+  ushort2 v13;
+  ushort4 v14;
+  ushort8 v15;
+  ushort16 v16;
+
+  int2 v17;
+  int4 v18;
+  int8 v19;
+  int16 v20;
+  uint2 v21;
+  uint4 v22;
+  uint8 v23;
+  uint16 v24;
+
+  long2 v25;
+  long4 v26;
+  long8 v27;
+  long16 v28;
+  ulong2 v29;
+  ulong4 v30;
+  ulong8 v31;
+  ulong16 v32;
+
+  float2 v33;
+  float4 v34;
+  float8 v35;
+  float16 v36;
+  double2 v37;
+  double4 v38;
+  double8 v39;
+  double16 v40;
+
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<vector<2xi8>>
+    %1 = memref.alloca() : memref<vector<4xi8>>
+    %2 = memref.alloca() : memref<vector<8xi8>>
+    %3 = memref.alloca() : memref<vector<16xi8>>
+    %4 = memref.alloca() : memref<vector<2xi8>>
+    %5 = memref.alloca() : memref<vector<4xi8>>
+    %6 = memref.alloca() : memref<vector<8xi8>>
+    %7 = memref.alloca() : memref<vector<16xi8>>
+    %8 = memref.alloca() : memref<vector<2xi16>>
+    %9 = memref.alloca() : memref<vector<4xi16>>
+    %10 = memref.alloca() : memref<vector<8xi16>>
+    %11 = memref.alloca() : memref<vector<16xi16>>
+    %12 = memref.alloca() : memref<vector<2xi16>>
+    %13 = memref.alloca() : memref<vector<4xi16>>
+    %14 = memref.alloca() : memref<vector<8xi16>>
+    %15 = memref.alloca() : memref<vector<16xi16>>
+    %16 = memref.alloca() : memref<vector<2xi32>>
+    %17 = memref.alloca() : memref<vector<4xi32>>
+    %18 = memref.alloca() : memref<vector<8xi32>>
+    %19 = memref.alloca() : memref<vector<16xi32>>
+    %20 = memref.alloca() : memref<vector<2xi32>>
+    %21 = memref.alloca() : memref<vector<4xi32>>
+    %22 = memref.alloca() : memref<vector<8xi32>>
+    %23 = memref.alloca() : memref<vector<16xi32>>
+    %24 = memref.alloca() : memref<vector<2xi64>>
+    %25 = memref.alloca() : memref<vector<4xi64>>
+    %26 = memref.alloca() : memref<vector<8xi64>>
+    %27 = memref.alloca() : memref<vector<16xi64>>
+    %28 = memref.alloca() : memref<vector<2xi64>>
+    %29 = memref.alloca() : memref<vector<4xi64>>
+    %30 = memref.alloca() : memref<vector<8xi64>>
+    %31 = memref.alloca() : memref<vector<16xi64>>
+    %32 = memref.alloca() : memref<vector<2xf32>>
+    %33 = memref.alloca() : memref<vector<4xf32>>
+    %34 = memref.alloca() : memref<vector<8xf32>>
+    %35 = memref.alloca() : memref<vector<16xf32>>
+    %36 = memref.alloca() : memref<vector<2xf64>>
+    %37 = memref.alloca() : memref<vector<4xf64>>
+    %38 = memref.alloca() : memref<vector<8xf64>>
+    %39 = memref.alloca() : memref<vector<16xf64>>
+    return
+  }
+}
+      |]
