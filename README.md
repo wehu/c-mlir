@@ -269,6 +269,33 @@ module  {
 }
 ```
 
+### Dma example
+```c
+void foo() {
+  int src[2];
+  int dst[2];
+  int tag[1];
+  dma_start(src[0], dst[0], tag[0], 2);
+  dma_wait(tag[0], 2);
+}
+```
+
+Output IR as below
+```mlir
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %c2 = arith.constant 2 : index
+    %c0 = arith.constant 0 : index
+    %0 = memref.alloca() : memref<2xi32>
+    %1 = memref.alloca() : memref<2xi32>
+    %2 = memref.alloca() : memref<1xi32>
+    affine.dma_start %0[%c0], %1[%c0], %2[%c0], %c2 : memref<2xi32>, memref<2xi32>, memref<1xi32>
+    affine.dma_wait %2[%c0], %c2 : memref<1xi32>
+    return
+  }
+}
+```
+
 ## Install
 
 Install stack
