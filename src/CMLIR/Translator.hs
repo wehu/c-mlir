@@ -4,7 +4,6 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE TypeApplications #-}
-{-# OPTIONS_GHC -Wno-overlapping-patterns #-}
 module CMLIR.Translator where
 
 import qualified MLIR.AST.Builder as AST
@@ -59,7 +58,7 @@ data Env = Env {decls :: [Decl],
                 funDefs :: [FunDef],
                 funsWithBody :: M.Map String AST.Type,
                 enumerators :: [Enumerator],
-                typeDefs :: [TypeDef],
+                typeDefs :: M.Map String TypeDef,
                 labels :: M.Map String BU.ByteString,
                 enums :: M.Map String Integer,
                 vars :: M.Map String (BU.ByteString, SType, Bool),
@@ -78,7 +77,7 @@ initEnv = Env{decls = [],
               funDefs = [],
               funsWithBody = M.empty,
               enumerators = [],
-              typeDefs = [],
+              typeDefs = M.empty,
               labels = M.empty,
               enums = M.empty,
               vars = M.empty,
@@ -286,7 +285,8 @@ addEnum (Enumerator ident e _ node) = do
 -- | Translate global declaration
 transGDecl :: Decl -> EnvM [AST.Binding]
 transGDecl decl@(Decl var node) = do
-  let (name, (ty, sign)) = varDecl (posOf node) var
+  tdefs <- typeDefs <$> getUserState 
+  let (name, (ty, sign)) = varDecl tdefs (posOf node) var
   funcs <- funsWithBody <$> getUserState
   let found = M.lookup name funcs
   if isn't _Nothing found then return []
@@ -304,20 +304,22 @@ transGDecl decl@(Decl var node) = do
 -- | Register all function types into env
 registerFunction :: Decl -> EnvM ()
 registerFunction f@(Decl var node) = do
-  let (name, (ty, sign)) = varDecl (posOf node) var
+  tdefs <- typeDefs <$> getUserState 
+  let (name, (ty, sign)) = varDecl tdefs (posOf node) var
   addVar name (BU.fromString name, (ty, sign), False)
 
 -- | Translate a function to mlir AST
 transFunction :: FunDef -> EnvM AST.Binding
 transFunction f@(FunDef var stmt node) = do
-  let (name, (ty, sign)) = varDecl (posOf node) var
+  tdefs <- typeDefs <$> getUserState 
+  let (name, (ty, sign)) = varDecl tdefs (posOf node) var
   modifyUserState (\s -> s{funsWithBody=M.insert name ty (funsWithBody s)})
   underScope $ do
     modifyUserState (\s -> s{isAffineScope = True})
     argIds <- mapM (\(n, t) -> do
                       id <- freshName
                       addVar n (id, t, False)
-                      return (id, t^._1)) [(a ^._1, a ^._2) | a <- params (posOf node) var]
+                      return (id, t^._1)) [(a ^._1, a ^._2) | a <- params tdefs (posOf node) var]
     indBs <- mapM (\(n, t, id) ->
                       if t == AST.IntegerType AST.Signless 32 then do
                         (indBs, indId) <- toIndex (getPos node) id t
@@ -326,7 +328,7 @@ transFunction f@(FunDef var stmt node) = do
                           Left indBs -> return [indBs]
                           _ -> return []
                       else return [])
-                    [ (p ^._1, p ^._2._1, id ^._1) | p <- params (posOf node) var | id <- argIds]
+                    [ (p ^._1, p ^._2._1, id ^._1) | p <- params tdefs (posOf node) var | id <- argIds]
     b <- transBlock argIds (join indBs) stmt []
     let f = emitted $ AST.FuncOp (getPos node) (BU.fromString name) ty $ AST.Region [b]
     isKernel <- M.lookup name . kernels <$> getUserState
@@ -368,6 +370,7 @@ transBlockItem s = unsupported (posOf s) s
 -- | Translate a local variable declaration
 transLocalDecl :: ObjDef -> EnvM [BindingOrName]
 transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
+  tdefs <- typeDefs <$> getUserState 
   let storage = declStorage var
   case storage of
     Static{} -> error $ "static is not supported" ++ show (posOf node)
@@ -375,7 +378,7 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
   id <- freshName
   id0 <- freshName
   initBs <- mapM transInit init
-  let (n, t) = varDecl (posOf node) var
+  let (n, t) = varDecl tdefs (posOf node) var
       (isPtr, isConst) = case orgTy of
                 (PtrType t quals _) -> (True, constant quals)
                 (DirectType _ quals _) -> (False, constant quals)
@@ -713,8 +716,9 @@ transExpr (CIndex e index node) = do
             return $ join (indexBs ^.. traverse . _1) ++
                       toIndices ^.. traverse . _1 ++ [Left $ id AST.:= (MemRef.Load ty srcId (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
 transExpr c@(CCast t e node) = do
+  tdefs <- typeDefs <$> getUserState 
   (srcBs, (srcTy, srcSign)) <- transExpr e
-  (dstTy, dstSign) <- type_ (posOf node) 0 <$> analyseTypeDecl t
+  (dstTy, dstSign) <- type_ tdefs (posOf node) 0 <$> analyseTypeDecl t
   if srcTy == dstTy then return (srcBs, (srcTy, srcSign))
   else do
     dstId <- freshName
@@ -1037,7 +1041,9 @@ handlers (TagEvent (CompDef compT)) = return ()
 handlers (TagEvent (EnumDef (EnumType _ es _ node))) = modifyUserState (\s -> s{enumerators=enumerators s ++ es})
 handlers (DeclEvent (Declaration decl)) = modifyUserState (\s -> s{decls=decls s ++ [decl]})
 handlers (DeclEvent (FunctionDef funDef)) = modifyUserState (\s -> s{funDefs=funDefs s ++ [funDef]})
-handlers (TypeDefEvent typeDef) = modifyUserState (\s -> s{typeDefs=typeDefs s ++ [typeDef]})
+handlers (TypeDefEvent typeDef@(TypeDef ident ty attrs node)) = do
+  let name = identName ident
+  modifyUserState (\s -> s{typeDefs=M.insert name typeDef $ typeDefs s})
 handlers (LocalEvent (ObjectDef objDef)) = modifyUserState (\s -> s{objDefs=M.insert (posOf objDef) objDef (objDefs s)})
 handlers (AsmEvent (CStrLit c n)) = return ()
 handlers _ = return ()
@@ -1049,13 +1055,14 @@ varName :: VarName -> String
 varName (VarName ident _) = identName ident
 varName NoName = ""
 
-type_ :: Position -> Int -> Type -> SType
-type_ pos ms (FunctionType ty attrs) = f ty
+type_ :: M.Map String TypeDef -> Position -> Int -> Type -> SType
+type_ tdefs pos ms (FunctionType ty attrs) = f ty
   where f (FunType resType argTypes _) =
-            (AST.FunctionType (map (\t -> paramDecl pos t ^. _2 . _1) argTypes)
-                              ([t | t <- map (\t -> type_ pos ms t ^._1) [resType], t /= AST.NoneType]), type_ pos ms resType ^. _2)
-        f (FunTypeIncomplete ty) = type_ pos ms ty
-type_ pos ms ty@(DirectType name quals attrs) =
+            (AST.FunctionType (map (\t -> paramDecl tdefs pos t ^. _2 . _1) argTypes)
+                              ([t | t <- map (\t -> type_ tdefs pos ms t ^._1) [resType], t /= AST.NoneType]), 
+                               type_ tdefs pos ms resType ^. _2)
+        f (FunTypeIncomplete ty) = type_ tdefs pos ms ty
+type_ tdefs pos ms ty@(DirectType name quals attrs) =
   case name of
     TyVoid -> (AST.NoneType, False)
     TyIntegral (id -> TyBool) -> (AST.IntegerType AST.Signless 1, False)
@@ -1076,73 +1083,22 @@ type_ pos ms ty@(DirectType name quals attrs) =
     TyFloating (id -> TyDouble) -> (AST.Float64Type, True)
     TyFloating (id -> TyLDouble) -> (AST.Float64Type, True)
     TyFloating (id -> TyFloatN n _) -> unsupported pos ty
-    TyComplex t -> let (ct, sign) = type_ pos ms (DirectType (TyFloating t) quals attrs)
+    TyComplex t -> let (ct, sign) = type_ tdefs pos ms (DirectType (TyFloating t) quals attrs)
                     in (AST.ComplexType ct, sign)
+    TyComp ref -> unsupported pos ty
     TyEnum ref -> (AST.IntegerType AST.Signless 32, True)
     TyBuiltin _ -> unsupported pos ty
-    TyComp (CompTypeRef ref StructTag _)
-      | show (pretty ref) == "char2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 8), True)
-      | show (pretty ref) == "char3" -> (AST.VectorType [3] (AST.IntegerType AST.Signless 8), True)
-      | show (pretty ref) == "char4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 8), True)
-      | show (pretty ref) == "char8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 8), True)
-      | show (pretty ref) == "char16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 8), True)
-      | show (pretty ref) == "uchar2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 8), False)
-      | show (pretty ref) == "uchar3" -> (AST.VectorType [3] (AST.IntegerType AST.Signless 8), False)
-      | show (pretty ref) == "uchar4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 8), False)
-      | show (pretty ref) == "uchar8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 8), False)
-      | show (pretty ref) == "uchar16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 8), False)
-      | show (pretty ref) == "short2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 16), True)
-      | show (pretty ref) == "short3" -> (AST.VectorType [3] (AST.IntegerType AST.Signless 16), True)
-      | show (pretty ref) == "short4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 16), True)
-      | show (pretty ref) == "short8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 16), True)
-      | show (pretty ref) == "short16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 16), True)
-      | show (pretty ref) == "ushort2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 16), False)
-      | show (pretty ref) == "ushort3" -> (AST.VectorType [3] (AST.IntegerType AST.Signless 16), False)
-      | show (pretty ref) == "ushort4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 16), False)
-      | show (pretty ref) == "ushort8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 16), False)
-      | show (pretty ref) == "ushort16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 16), False)
-      | show (pretty ref) == "int2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 32), True)
-      | show (pretty ref) == "int3" -> (AST.VectorType [3] (AST.IntegerType AST.Signless 32), True)
-      | show (pretty ref) == "int4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 32), True)
-      | show (pretty ref) == "int8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 32), True)
-      | show (pretty ref) == "int16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 32), True)
-      | show (pretty ref) == "uint2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 32), False)
-      | show (pretty ref) == "uint3" -> (AST.VectorType [3] (AST.IntegerType AST.Signless 32), False)
-      | show (pretty ref) == "uint4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 32), False)
-      | show (pretty ref) == "uint8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 32), False)
-      | show (pretty ref) == "uint16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 32), False)
-      | show (pretty ref) == "long2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 64), True)
-      | show (pretty ref) == "long3" -> (AST.VectorType [3] (AST.IntegerType AST.Signless 64), True)
-      | show (pretty ref) == "long4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 64), True)
-      | show (pretty ref) == "long8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 64), True)
-      | show (pretty ref) == "long16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 64), True)
-      | show (pretty ref) == "ulong2" -> (AST.VectorType [2] (AST.IntegerType AST.Signless 64), False)
-      | show (pretty ref) == "ulong3" -> (AST.VectorType [3] (AST.IntegerType AST.Signless 64), False)
-      | show (pretty ref) == "ulong4" -> (AST.VectorType [4] (AST.IntegerType AST.Signless 64), False)
-      | show (pretty ref) == "ulong8" -> (AST.VectorType [8] (AST.IntegerType AST.Signless 64), False)
-      | show (pretty ref) == "ulong16" -> (AST.VectorType [16] (AST.IntegerType AST.Signless 64), False)
-      | show (pretty ref) == "float2" -> (AST.VectorType [2] AST.Float32Type, True)
-      | show (pretty ref) == "float3" -> (AST.VectorType [3] AST.Float32Type, True)
-      | show (pretty ref) == "float4" -> (AST.VectorType [4] AST.Float32Type, True)
-      | show (pretty ref) == "float8" -> (AST.VectorType [8] AST.Float32Type, True)
-      | show (pretty ref) == "float16" -> (AST.VectorType [16] AST.Float32Type, True)
-      | show (pretty ref) == "double2" -> (AST.VectorType [2] AST.Float64Type, True)
-      | show (pretty ref) == "double3" -> (AST.VectorType [3] AST.Float32Type, True)
-      | show (pretty ref) == "double4" -> (AST.VectorType [4] AST.Float64Type, True)
-      | show (pretty ref) == "double8" -> (AST.VectorType [8] AST.Float64Type, True)
-      | show (pretty ref) == "double16" -> (AST.VectorType [16] AST.Float64Type, True)
-      | otherwise -> unsupported pos ty
     _ -> unsupported pos ty
-type_ pos ms ty@(PtrType t quals attrs) =
-  let (tt, sign) = type_ pos ms t
+type_ tdefs pos ms ty@(PtrType t quals attrs) =
+  let (tt, sign) = type_ tdefs pos ms t
    in (AST.MemRefType [Nothing] tt Nothing (Just $ AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms), sign)
-type_ pos ms (ArrayType t size quals attrs) =
+type_ tdefs pos ms (ArrayType t size quals attrs) =
   let s = arraySize size
       msAttr = AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms
-   in case type_ pos ms t of
+   in case type_ tdefs pos ms t of
         (AST.MemRefType sizes t Nothing ms, sign) -> (AST.MemRefType (s:sizes) t Nothing ms, sign)
         (t, sign) -> (AST.MemRefType [s] t Nothing (Just msAttr), sign)
-type_ pos ms (TypeDefType (TypeDefRef ident t _) quals attrs) = type_ pos ms t
+type_ tdefs pos ms (TypeDefType (TypeDefRef ident t _) quals attrs) = type_ tdefs pos ms t
 
 arraySize :: ArraySize -> Maybe Int
 arraySize (UnknownArraySize static) =
@@ -1152,18 +1108,18 @@ arraySize (ArraySize static expr) =
     Just e -> Just $ fromIntegral e
     Nothing -> error "unsupported dynamic array size"
 
-paramDecl :: Position -> ParamDecl -> (String, SType)
-paramDecl pos (ParamDecl var _) = varDecl pos var
-paramDecl pos (AbstractParamDecl var _) = varDecl pos var
+paramDecl :: M.Map String TypeDef -> Position -> ParamDecl -> (String, SType)
+paramDecl tdefs pos (ParamDecl var _) = varDecl tdefs pos var
+paramDecl tdefs pos (AbstractParamDecl var _) = varDecl tdefs pos var
 
-varDecl :: Position -> VarDecl -> (String, SType)
-varDecl pos v@(VarDecl name attrs ty) = (varName name, type_ pos (memorySpace v) ty)
+varDecl :: M.Map String TypeDef -> Position -> VarDecl -> (String, SType)
+varDecl tdefs pos v@(VarDecl name attrs ty) = (varName name, type_ tdefs pos (memorySpace v) ty)
 
-params :: Position -> VarDecl -> [(String, SType)]
-params pos (VarDecl name attr ty) = f ty
+params :: M.Map String TypeDef -> Position -> VarDecl -> [(String, SType)]
+params tdefs pos (VarDecl name attr ty) = f ty
   where f (FunctionType ty attrs) = ps ty
         f _ = unsupported pos ty
-        ps (FunType resType argTypes _) = map (paramDecl pos) argTypes
+        ps (FunType resType argTypes _) = map (paramDecl tdefs pos) argTypes
         ps (FunTypeIncomplete ty) = unsupported pos ty
 
 memorySpace :: VarDecl -> Int
