@@ -798,14 +798,21 @@ transExpr c@(CCall (CVar ident _) [tag', size] node) | identName ident == "dma_w
   (tagBs, (tagTy, tagSign)) <- transExpr tag
   (sizeBs, (sizeTy, sizeSign)) <- transExpr size
   ds <- affineDimensions <$> getUserState 
-  syms <- affineSymbols <$> getUserState 
+  syms <- affineSymbols <$> getUserState
+  (sizeIndBs, sizeId) <- toIndex loc (lastId sizeBs) sizeTy
   let tagIndexAEs = map (exprToAffineExpr ds syms) tagIndices
   if all (isn't _Nothing) tagIndexAEs then do
     tagInds <- mapM (applyAffineExpr loc ds syms . fst . fromJust) tagIndexAEs
     let dma = AST.Do $ Affine.dmaWait loc (lastId tagBs) (map lastId tagInds)
-                                          (lastId sizeBs)
-    return (tagBs++join tagInds++sizeBs++[Left dma], (tagTy, tagSign))
-  else unsupported (posOf node) c
+                                          sizeId
+    return (tagBs++join tagInds++sizeBs++[sizeIndBs, Left dma], (tagTy, tagSign))
+  else do
+    tagIndBs <- mapM transExpr tagIndices
+    tagToIndex <- mapM (uncurry (toIndex loc)) [(lastId $ id ^._1, id^._2._1)|id <- tagIndBs]
+    let dma = AST.Do $ MemRef.dmaWait loc (lastId tagBs) (tagToIndex ^..traverse._2) 
+                                           sizeId
+    return (tagBs++join (tagIndBs^..traverse._1)++(tagToIndex^..traverse._1)++
+            sizeBs++[sizeIndBs, Left dma], (tagTy, tagSign))
 transExpr c@(CCall (CVar ident _) args node) = do
   let name = identName ident
       loc = getPos node
