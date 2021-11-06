@@ -15,7 +15,7 @@ For opencl, `__local` is mapped to memory space `1`, `__global` is mapped to mem
 
 Dynamic sizes array, `break`, `continue`, `goto`, `&` and `switch`/`case` are not supported.
 
-Basic matmul example:
+### Basic matmul example
 ```c
 #define N 1
 #define M 2
@@ -62,7 +62,7 @@ module  {
 }
 ```
 
-Opencl GEMM example:
+### Opencl GEMM example
 ```c
 int get_global_id(int);
 
@@ -118,7 +118,7 @@ module  {
 }
 ```
 
-Opencl GEMM with local memory:
+### Opencl GEMM with local memory
 ```c
 #define TS 10
 #define CLK_LOCAL_MEM_FENCE 1
