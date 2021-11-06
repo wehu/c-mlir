@@ -753,6 +753,31 @@ transExpr c@(CCast t e node) = do
                     AST.Float64Type -> 64
                     AST.IntegerType _ bs -> bs
                     _ -> unsupported (posOf c) c
+transExpr c@(CCall (CVar ident _) [src', dst', tag', size] node) | identName ident == "dma_start" = do
+  let loc = getPos node
+      (src, srcIndices) = collectIndices src' []
+      (dst, dstIndices) = collectIndices dst' []
+      (tag, tagIndices) = collectIndices tag' []
+  when (L.length tagIndices /= 1) $ error $ "dma_start expected 1 index for tag" ++ show (posOf node)
+  (srcBs, (srcTy, srcSign)) <- transExpr src
+  (dstBs, (dstTy, dstSign)) <- transExpr dst
+  (tagBs, (tagTy, tagSign)) <- transExpr tag
+  (sizeBs, (sizeTy, sizeSign)) <- transExpr size
+  ds <- affineDimensions <$> getUserState 
+  syms <- affineSymbols <$> getUserState 
+  let srcIndexAEs = map (exprToAffineExpr ds syms) srcIndices
+      dstIndexAEs = map (exprToAffineExpr ds syms) dstIndices
+      tagIndexAEs = map (exprToAffineExpr ds syms) tagIndices
+  if all (isn't _Nothing) srcIndexAEs && all (isn't _Nothing) dstIndexAEs && all (isn't _Nothing) tagIndexAEs then do
+    srcInds <- mapM (applyAffineExpr loc ds syms . fst . fromJust) srcIndexAEs
+    dstInds <- mapM (applyAffineExpr loc ds syms . fst . fromJust) dstIndexAEs
+    tagInds <- mapM (applyAffineExpr loc ds syms . fst . fromJust) tagIndexAEs
+    let dma = AST.Do $ Affine.dmaStart loc (lastId srcBs) (map lastId srcInds)
+                                           (lastId dstBs) (map lastId dstInds)
+                                           (lastId tagBs) (lastId $ head tagInds)
+                                           (lastId sizeBs)
+    return (srcBs++join srcInds++dstBs++join dstInds++tagBs++join tagInds++sizeBs++[Left dma], (dstTy, dstSign))
+  else unsupported (posOf node) c
 transExpr c@(CCall (CVar ident _) args node) = do
   let name = identName ident
       loc = getPos node

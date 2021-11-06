@@ -61,3 +61,16 @@ apply loc map operands = Operation
   , opSuccessors = []
   , opAttributes = namedAttribute "map" (AffineMapAttr map)
   }
+
+dmaStart :: Location -> Name -> [Name] -> Name -> [Name] -> Name -> Name -> Name -> Operation
+dmaStart loc src srcIndices dst dstIndices tag tagIndex size = Operation
+  { opName = "affine.dma_start"
+  , opLocation = loc
+  , opResultTypes = Explicit []
+  , opOperands = src:srcIndices ++ dst:dstIndices ++ [tag, tagIndex, size]
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = namedAttribute "src_map" (AffineMapAttr (Map (length srcIndices) 0 [Dimension i| (i, _) <- zip [0..] srcIndices])) <>
+                   namedAttribute "dst_map" (AffineMapAttr (Map (length dstIndices) 0 [Dimension i| (i, _) <- zip [0..] dstIndices])) <>
+                   namedAttribute "tag_map" (AffineMapAttr (Map 1 0 [Dimension 0]))
+  }

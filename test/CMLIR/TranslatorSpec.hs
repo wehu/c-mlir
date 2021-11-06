@@ -1474,3 +1474,28 @@ module  {
   }
 }
       |]
+    
+    it "can translate dma_start" $ do
+      [r|
+void foo() {
+  int src[2];
+  int dst[2];
+  int tag[1];
+  dma_start(src[1], dst[1], tag[1], 1);
+}
+      |] `shouldBeTranslatedAs` [r|
+#map = affine_map<() -> (1)>
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<2xi32>
+    %1 = memref.alloca() : memref<2xi32>
+    %2 = memref.alloca() : memref<1xi32>
+    %3 = affine.apply #map()
+    %4 = affine.apply #map()
+    %5 = affine.apply #map()
+    %c1_i32 = arith.constant 1 : i32
+    affine.dma_start %0[%3], %1[%4], %2[%5], %c1_i32 : memref<2xi32>, memref<2xi32>, memref<1xi32>
+    return
+  }
+}
+      |]
