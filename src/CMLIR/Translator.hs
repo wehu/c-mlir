@@ -373,6 +373,7 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
     Static{} -> error $ "static is not supported" ++ show (posOf node)
     _ -> return ()
   id <- freshName
+  id0 <- freshName
   initBs <- mapM transInit init
   let (n, t) = varDecl (posOf node) var
       (isPtr, isConst) = case orgTy of
@@ -381,23 +382,26 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
                 (ArrayType _ _ quals _) -> (False, constant quals)
                 (TypeDefType _ quals _) -> (False, constant quals)
                 _ -> (False, False)
-      (mt, isAssignable) =
-        if isPtr then (if isConst then t ^._1 else AST.MemRefType [] (t ^._1) Nothing Nothing, not isConst)
+      (mt, isAssignable, isArray) =
+        if isPtr then (if isConst then t ^._1 else AST.MemRefType [Nothing] (t ^._1) Nothing Nothing, not isConst, False)
         else case t of
-               (t@AST.MemRefType{}, _) -> (t, False)
+               (t@AST.MemRefType{}, _) -> (t, False, True)
                (t, _) -> (if isConst && isn't _Nothing initBs
-                          then t else AST.MemRefType [] t Nothing Nothing, not isConst)
-      (b, resId) = if isConst && isn't _Nothing initBs then
+                          then t else AST.MemRefType [Nothing] t Nothing Nothing, not isConst, False)
+      (bs, resId) | isConst && isn't _Nothing initBs =
                      let id = lastId (join $ fromJust initBs)
-                      in (Right id, id)
-                   else (Left $ id AST.:= MemRef.alloca (getPos node) mt [] [], id)
+                      in ([Right id], id)
+                  | isArray = ([Left $ id AST.:= MemRef.alloca (getPos node) mt [] []], id)
+                  | otherwise =
+                     ([Left $ id0 AST.:= constIndex0 (getPos node)
+                      ,Left $ id AST.:= MemRef.alloca (getPos node) mt [id0] []], id)
   st <- if isn't _Nothing initBs && not isConst then do
           (^._1) <$> foldM (\(s, index) initBs -> do
                        let ds = case mt of
                                   (AST.MemRefType ds _ _ _) -> ds
                                   _ -> unsupported (posOf node) d
-                       when (any (isn't _Just) ds) $ error $ "unsupported for dynamic sizes array initialization " ++ show (posOf node)
-                       let shape = ds ^..traverse._Just
+                       -- when (any (isn't _Just) ds) $ error $ "unsupported for dynamic sizes array initialization " ++ show (posOf node)
+                       let shape = ds ^..traverse.non 1
                            strides = tail $ L.foldl' (\s i -> (i*head s):s) [1] (reverse shape)
                        ids <- mapM (const freshName) ds
                        let consts = L.foldl' (\(s, d) id -> (s++[Left $ id AST.:= constInt (getPos node) AST.IndexType
@@ -413,7 +417,7 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
              addAffineSymbol n indId
              return [indBs]
            else return []
-  return $ join (fromMaybe [[]] initBs) ++ [b] ++ st ++ indBs
+  return $ join (fromMaybe [[]] initBs) ++ bs ++ st ++ indBs
 
 -- | Translate an initalization expression
 transInit :: CInitializer NodeInfo -> EnvM [[BindingOrName]]
@@ -563,10 +567,12 @@ transExpr (CVar ident node) = do
     Nothing -> do
       (id, (ty, sign), isAssignable) <- lookupVar name
       if isAssignable then do
+        id0 <- freshName
         id1 <- freshName
-        let ld = Affine.load (getPos node) ty id []
+        let c0 = id0 AST.:= constIndex0 (getPos node)
+            ld = Affine.load (getPos node) ty id [id0]
             op1 = id1 AST.:= ld
-        return ([Left op1, Right id1], (ty, sign))
+        return ([Left c0, Left op1, Right id1], (ty, sign))
       else return ([Right id], (ty, sign))
 transExpr (CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
@@ -589,17 +595,19 @@ transExpr (CAssign op lhs rhs node) = do
   let rhsId = lastId rhsBs
   if null indices then do
     id0 <- freshName
-    let c0 = [Left $ id0 AST.:= constIndex0 (getPos node) | isDeref]
-        st = Affine.store (getPos node) rhsId id [id0 | isDeref]
+    let c0 = [Left $ id0 AST.:= constIndex0 (getPos node)]
+        st = Affine.store (getPos node) rhsId id [id0]
         op1 = AST.Do st{AST.opLocation = getPos node}
     return (srcBs ++ rhsBs ++ c0 ++ [Left op1], ty)
   else do
     let (dstTy, sign) = case ty of
                   (AST.MemRefType _ ty _ _, sign) -> (ty, sign)
                   _ -> unsupported (posOf src) src
+    id0 <- freshName
     id1 <- freshName
     st <- if isAssignable
-          then ([Left $ id1 AST.:= Affine.load (getPos node) (ty^._1) id []] ++) <$> tryStore (getPos node) rhsId id1 indices
+          then ([Left $ id0 AST.:= constIndex0 (getPos node)
+                ,Left $ id1 AST.:= Affine.load (getPos node) (ty^._1) id [id0]] ++) <$> tryStore (getPos node) rhsId id1 indices
           else tryStore (getPos node) rhsId id indices
     return (srcBs ++ rhsBs ++ st, (dstTy, sign))
   where tryStore loc vId dstId indices = do
@@ -681,9 +689,11 @@ transExpr (CIndex e index node) = do
              AST.MemRefType _ ty _ _ -> ty
              _ -> unsupported (posOf src) src
   id <- freshName
+  id0 <- freshName
   id1 <- freshName
   ld <- if isAssignable
-        then ([Left $ id1 AST.:= Affine.load (getPos node) srcTy srcId []] ++) <$> tryLoad (getPos node) ty srcTy id id1 indices
+        then ([Left $ id0 AST.:= constIndex0 (getPos node)
+              ,Left $ id1 AST.:= Affine.load (getPos node) srcTy srcId [id0]] ++) <$> tryLoad (getPos node) ty srcTy id id1 indices
         else tryLoad (getPos node) ty srcTy id srcId indices
   return (srcBs ++ ld ++ [Right id], (ty, sign))
   where tryLoad loc ty srcTy id srcId indices = do
@@ -767,7 +777,7 @@ transExpr c@(CCall (CVar ident _) [src', dst', tag', size] node) | identName ide
   (dstBs, (dstTy, dstSign)) <- transExpr dst
   (tagBs, (tagTy, tagSign)) <- transExpr tag
   (sizeBs, (sizeTy, sizeSign)) <- transExpr size
-  ds <- affineDimensions <$> getUserState 
+  ds <- affineDimensions <$> getUserState
   syms <- affineSymbols <$> getUserState
   (sizeIndBs, sizeId) <- toIndex loc (lastId sizeBs) sizeTy
   let srcIndexAEs = map (exprToAffineExpr ds syms) srcIndices
@@ -791,7 +801,7 @@ transExpr c@(CCall (CVar ident _) [src', dst', tag', size] node) | identName ide
     tagToIndex <- mapM (uncurry (toIndex loc)) [(lastId $ id ^._1, id^._2._1)|id <- tagIndBs]
     let dma = AST.Do $ MemRef.dmaStart loc (lastId srcBs) (srcToIndex ^..traverse._2)
                                            (lastId dstBs) (dstToIndex ^..traverse._2)
-                                           (lastId tagBs) (tagToIndex ^..traverse._2) 
+                                           (lastId tagBs) (tagToIndex ^..traverse._2)
                                            sizeId
     return (srcBs++join (srcIndBs^..traverse._1)++(srcToIndex^..traverse._1)++
             dstBs++join (dstIndBs^..traverse._1)++(dstToIndex^..traverse._1)++
@@ -802,7 +812,7 @@ transExpr c@(CCall (CVar ident _) [tag', size] node) | identName ident == "dma_w
       (tag, tagIndices) = collectIndices tag' []
   (tagBs, (tagTy, tagSign)) <- transExpr tag
   (sizeBs, (sizeTy, sizeSign)) <- transExpr size
-  ds <- affineDimensions <$> getUserState 
+  ds <- affineDimensions <$> getUserState
   syms <- affineSymbols <$> getUserState
   (sizeIndBs, sizeId) <- toIndex loc (lastId sizeBs) sizeTy
   let tagIndexAEs = map (exprToAffineExpr ds syms) tagIndices
@@ -814,7 +824,7 @@ transExpr c@(CCall (CVar ident _) [tag', size] node) | identName ident == "dma_w
   else do
     tagIndBs <- mapM transExpr tagIndices
     tagToIndex <- mapM (uncurry (toIndex loc)) [(lastId $ id ^._1, id^._2._1)|id <- tagIndBs]
-    let dma = AST.Do $ MemRef.dmaWait loc (lastId tagBs) (tagToIndex ^..traverse._2) 
+    let dma = AST.Do $ MemRef.dmaWait loc (lastId tagBs) (tagToIndex ^..traverse._2)
                                            sizeId
     return (tagBs++join (tagIndBs^..traverse._1)++(tagToIndex^..traverse._1)++
             sizeBs++[sizeIndBs, Left dma], (tagTy, tagSign))
@@ -904,6 +914,11 @@ transExpr (CUnary CIndOp e node) = do
       bs = [Left $ id0 AST.:= constIndex0 loc
            ,Left $ id AST.:= Affine.load loc resTy (lastId eBs) [id0]]
   return (eBs ++ bs ++ [Right id], (resTy, eSign))
+transExpr adr@(CUnary CAdrOp (CVar ident _) node) = do
+  let name = identName ident
+  (id, (ty, sign), isAssignable)  <- lookupVar name
+  unless isAssignable $ error $ "& only support lvalue" ++ show (posOf node)
+  return ([Right id], (AST.MemRefType [Nothing] ty Nothing Nothing, sign))
 transExpr e = unsupported (posOf e) e
 
 data DimensionOrSymbolOrConst =

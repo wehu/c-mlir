@@ -13,7 +13,7 @@ For `for`, if possible, try to lower to `affine.for`, and if not, try to lower t
 
 For opencl, `__local` is mapped to memory space `1`, `__global` is mapped to memory space `2`.
 
-Dynamic sizes array, `break`, `continue`, `goto`, `&` and `switch`/`case` are not supported.
+Dynamic sizes array, `break`, `continue`, `goto` and `switch`/`case` are not supported.
 
 ### Basic matmul example
 ```c
