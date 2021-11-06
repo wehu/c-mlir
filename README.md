@@ -67,9 +67,9 @@ Opencl GEMM example:
 int get_global_id(int);
 
 __kernel void GEMM(const int M, const int N, const int K,
-                  const __global float* A,
-                  const __global float* B,
-                  __global float* C) {
+                   const __global float* A,
+                   const __global float* B,
+                   __global float* C) {
     
     // Thread identifiers
     const int globalRow = get_global_id(0); // Row ID of C (0..M)
@@ -128,13 +128,13 @@ int get_group_id(int);
 void barrier(int);
 
 // Tiled and coalesced version
-__kernel void myGEMM2(const int M, const int N, const int K,
-                      const __global float* A,
-                      const __global float* B,
-                      __global float* C,
-                     // Local memory to fit a tile of TS*TS elements of A and B
-                     __local float Asub[TS][TS],
-                     __local float Bsub[TS][TS]) {
+__kernel void GEMM(const int M, const int N, const int K,
+                   const __global float* A,
+                   const __global float* B,
+                   __global float* C,
+                   // Local memory to fit a tile of TS*TS elements of A and B
+                   __local float Asub[TS][TS],
+                   __local float Bsub[TS][TS]) {
     
     // Thread identifiers
     const int row = get_local_id(0); // Local row ID (max: TS)
@@ -179,7 +179,7 @@ module  {
   func private @get_local_id(i32) -> i32
   func private @get_group_id(i32) -> i32
   func private @barrier(i32)
-  func @myGEMM2(%arg0: i32, %arg1: i32, %arg2: i32, %arg3: memref<?xf32, 2>, %arg4: memref<?xf32, 2>, %arg5: memref<?xf32, 2>, %arg6: memref<10x10xf32, 1>, %arg7: memref<10x10xf32, 1>) attributes {cl.kernel = true, llvm.emit_c_interface} {
+  func @GEMM(%arg0: i32, %arg1: i32, %arg2: i32, %arg3: memref<?xf32, 2>, %arg4: memref<?xf32, 2>, %arg5: memref<?xf32, 2>, %arg6: memref<10x10xf32, 1>, %arg7: memref<10x10xf32, 1>) attributes {cl.kernel = true, llvm.emit_c_interface} {
     %c10_i32 = arith.constant 10 : i32
     %cst = arith.constant 0.000000e+00 : f32
     %c1_i32 = arith.constant 1 : i32
