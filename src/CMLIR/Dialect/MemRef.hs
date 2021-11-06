@@ -74,3 +74,25 @@ copy loc src dst = Operation
   , opSuccessors = []
   , opAttributes = NoAttrs
   }
+
+dmaStart :: Location -> Name -> [Name] -> Name -> [Name] -> Name -> [Name] -> Name -> Operation
+dmaStart loc src srcIndices dst dstIndices tag tagIndices size = Operation
+  { opName = "memref.dma_start"
+  , opLocation = loc
+  , opResultTypes = Explicit []
+  , opOperands = src:srcIndices ++ dst:dstIndices ++ [size] ++ tag:tagIndices
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = NoAttrs
+  }
+
+dmaWait :: Location -> Name -> [Name] -> Name -> Operation 
+dmaWait loc tag tagIndices size = Operation
+  { opName = "memref.dma_wait"
+  , opLocation = loc
+  , opResultTypes = Explicit []
+  , opOperands = tag:tagIndices ++ [size]
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = NoAttrs
+  }

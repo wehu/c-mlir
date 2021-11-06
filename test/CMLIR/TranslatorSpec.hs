@@ -1494,7 +1494,8 @@ module  {
     %4 = affine.apply #map()
     %5 = affine.apply #map()
     %c1_i32 = arith.constant 1 : i32
-    affine.dma_start %0[%3], %1[%4], %2[%5], %c1_i32 : memref<2xi32>, memref<2xi32>, memref<1xi32>
+    %6 = arith.index_cast %c1_i32 : i32 to index
+    affine.dma_start %0[%3], %1[%4], %2[%5], %6 : memref<2xi32>, memref<2xi32>, memref<1xi32>
     return
   }
 }
@@ -1514,6 +1515,38 @@ module  {
     %1 = affine.apply #map()
     %c1_i32 = arith.constant 1 : i32
     affine.dma_wait %0[%1], %c1_i32 : memref<1xi32>
+    return
+  }
+}
+      |]
+
+    it "can translate any dma_start" $ do
+      [r|
+void foo() {
+  int src[2];
+  int dst[2];
+  int tag[1];
+  int index = 1;
+  dma_start(src[index], dst[1], tag[1], 1);
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<2xi32>
+    %1 = memref.alloca() : memref<2xi32>
+    %2 = memref.alloca() : memref<1xi32>
+    %c1_i32 = arith.constant 1 : i32
+    %3 = memref.alloca() : memref<i32>
+    affine.store %c1_i32, %3[] : memref<i32>
+    %4 = affine.load %3[] : memref<i32>
+    %5 = arith.index_cast %4 : i32 to index
+    %c1_i32_0 = arith.constant 1 : i32
+    %6 = arith.index_cast %c1_i32_0 : i32 to index
+    %c1_i32_1 = arith.constant 1 : i32
+    %7 = arith.index_cast %c1_i32_1 : i32 to index
+    %c1_i32_2 = arith.constant 1 : i32
+    %8 = arith.index_cast %c1_i32_2 : i32 to index
+    memref.dma_start %0[%5], %1[%6], %8, %2[%7] : memref<2xi32>, memref<2xi32>, memref<1xi32>
     return
   }
 }

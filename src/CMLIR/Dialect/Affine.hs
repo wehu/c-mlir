@@ -62,26 +62,26 @@ apply loc map operands = Operation
   , opAttributes = namedAttribute "map" (AffineMapAttr map)
   }
 
-dmaStart :: Location -> Name -> [Name] -> Name -> [Name] -> Name -> Name -> Name -> Operation
-dmaStart loc src srcIndices dst dstIndices tag tagIndex size = Operation
+dmaStart :: Location -> Name -> [Name] -> Name -> [Name] -> Name -> [Name] -> Name -> Operation
+dmaStart loc src srcIndices dst dstIndices tag tagIndices size = Operation
   { opName = "affine.dma_start"
   , opLocation = loc
   , opResultTypes = Explicit []
-  , opOperands = src:srcIndices ++ dst:dstIndices ++ [tag, tagIndex, size]
+  , opOperands = src:srcIndices ++ dst:dstIndices ++ tag:tagIndices++[size]
   , opRegions = []
   , opSuccessors = []
   , opAttributes = namedAttribute "src_map" (AffineMapAttr (Map (length srcIndices) 0 [Dimension i| (i, _) <- zip [0..] srcIndices])) <>
                    namedAttribute "dst_map" (AffineMapAttr (Map (length dstIndices) 0 [Dimension i| (i, _) <- zip [0..] dstIndices])) <>
-                   namedAttribute "tag_map" (AffineMapAttr (Map 1 0 [Dimension 0]))
+                   namedAttribute "tag_map" (AffineMapAttr (Map (length dstIndices) 0 [Dimension i| (i, _) <- zip [0..] tagIndices]))
   }
 
-dmaWait :: Location -> Name -> Name -> Name -> Operation 
-dmaWait loc tag tagIndex size = Operation
+dmaWait :: Location -> Name -> [Name] -> Name -> Operation 
+dmaWait loc tag tagIndices size = Operation
   { opName = "affine.dma_wait"
   , opLocation = loc
   , opResultTypes = Explicit []
-  , opOperands = [tag, tagIndex, size]
+  , opOperands = tag:tagIndices++[size]
   , opRegions = []
   , opSuccessors = []
-  , opAttributes = namedAttribute "tag_map" (AffineMapAttr (Map 1 0 [Dimension 0]))
+  , opAttributes = namedAttribute "tag_map" (AffineMapAttr (Map (length tagIndices) 0 [Dimension i| (i, _) <- zip [0..] tagIndices]))
   }
