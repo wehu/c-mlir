@@ -451,7 +451,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
       (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp -> ident1 == ident2
       _ -> False) = do
   ds <- affineDimensions <$> getUserState
-  syms <- affineSymbols <$> getUserState 
+  syms <- affineSymbols <$> getUserState
   let name = identName ident0
       loc = getPos node
       step = case stepE of
@@ -462,8 +462,8 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
       lbAE = exprToAffineExpr ds syms lb
       ubAE = exprToAffineExpr ds syms ub
   if isn't _Nothing lbAE && isn't _Nothing ubAE then do
-    lbInd <- applyAffineExpr loc ds syms $ fromJust lbAE
-    ubInd <- applyAffineExpr loc ds syms $ fromJust ubAE
+    lbInd <- applyAffineExpr loc ds syms $ fromJust lbAE ^._1
+    ubInd <- applyAffineExpr loc ds syms $ fromJust ubAE ^._1
     b <- underScope $ do
       varName <- freshName
       let ty = AST.IntegerType AST.Signless 32
@@ -606,7 +606,7 @@ transExpr (CAssign op lhs rhs node) = do
           let affineExprs = map (exprToAffineExpr ds syms) indices
               isAffineLoad = all (isn't _Nothing) affineExprs
           if isAffineLoad then do
-            let es = map fromJust affineExprs
+            let es = map fromJust affineExprs ^..traverse._1
             indBs <- mapM (applyAffineExpr loc ds syms) es
             return $ join (indexBs ^.. traverse . _1) ++
                       toIndices ^.. traverse . _1 ++ join indBs ++ [Left $ AST.Do $ Affine.store loc vId dstId (map lastId indBs)]
@@ -690,7 +690,7 @@ transExpr (CIndex e index node) = do
           let affineExprs = map (exprToAffineExpr ds syms) indices
               isAffineLoad = all (isn't _Nothing) affineExprs
           if isAffineLoad then do
-            let es = map fromJust affineExprs
+            let es = map fromJust affineExprs ^..traverse._1
             indBs <- mapM (applyAffineExpr loc ds syms) es
             return $ join (indexBs ^.. traverse . _1) ++
                       toIndices ^.. traverse . _1 ++ join indBs ++ [Left $ id AST.:= Affine.load loc ty srcId (map lastId indBs)]
@@ -834,31 +834,41 @@ transExpr (CUnary CIndOp e node) = do
   return (eBs ++ bs ++ [Right id], (resTy, eSign))
 transExpr e = unsupported (posOf e) e
 
+data DimensionOrSymbolOrConst =
+  ADimension | ASymbol | AConst
+  deriving (Eq)
+
+inferDsc lDsc rDsc
+  | lDsc == ADimension || rDsc == ADimension = ADimension
+  | lDsc == ASymbol || rDsc == ASymbol = ASymbol
+  | otherwise = AConst
+
 -- | Translate to affine Expr
-exprToAffineExpr :: M.Map String (Int, BU.ByteString) -> M.Map String (Int, BU.ByteString) -> CExpr -> Maybe Affine.Expr
+exprToAffineExpr :: M.Map String (Int, BU.ByteString) -> M.Map String (Int, BU.ByteString) -> CExpr
+                   -> Maybe (Affine.Expr, DimensionOrSymbolOrConst)
 exprToAffineExpr ds syms (CVar ident node) =
   let name = identName ident
       d = M.lookup name ds
    in case d of
-        Just (d, _) -> Just (Affine.Dimension d)
-        Nothing -> fmap (\v -> Affine.Symbol $ v ^._1) (M.lookup name syms)
+        Just (d, _) -> Just (Affine.Dimension d, ADimension)
+        Nothing -> fmap (\v -> (Affine.Symbol $ v ^._1, ASymbol)) (M.lookup name syms)
 exprToAffineExpr ds syms c@(CConst (CIntConst _ _)) =
-  fmap (Affine.Constant . fromIntegral) (intValue c)
+  fmap (\c -> (Affine.Constant $ fromIntegral c, AConst)) (intValue c)
 exprToAffineExpr ds syms (CBinary CAddOp lhs rhs node) = do
-  l <- exprToAffineExpr ds syms lhs
-  r <- exprToAffineExpr ds syms rhs
-  return $ Affine.Add l r
+  (l, lDsc) <- exprToAffineExpr ds syms lhs
+  (r, rDsc) <- exprToAffineExpr ds syms rhs
+  return (Affine.Add l r, inferDsc lDsc rDsc)
 exprToAffineExpr ds syms (CBinary op lhs rhs@(CConst (CIntConst _ _)) node)
   | op == CMulOp ||
     op == CDivOp ||
     op == CRmdOp = do
-  l <- exprToAffineExpr ds syms lhs
-  r <- exprToAffineExpr ds syms rhs
-  return $ (case op of
+  (l, lDsc) <- exprToAffineExpr ds syms lhs
+  (r, rDsc) <- exprToAffineExpr ds syms rhs
+  return ((case op of
               CMulOp -> Affine.Mul
               CRmdOp -> Affine.Mod
               CDivOp -> Affine.FloorDiv
-              _ -> unsupported (posOf node) op) l r
+              _ -> unsupported (posOf node) op) l r, inferDsc lDsc rDsc)
 exprToAffineExpr _ _ _ = Nothing
 
 -- | Translate a constant expression
