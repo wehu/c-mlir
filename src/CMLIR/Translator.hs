@@ -63,7 +63,8 @@ data Env = Env {decls :: [Decl],
                 enums :: M.Map String Integer,
                 vars :: M.Map String (BU.ByteString, SType, Bool),
                 kernels :: M.Map String Bool,
-                inductions :: M.Map String (Int, BU.ByteString),
+                affineDimensions :: M.Map String (Int, BU.ByteString),
+                affineSymbols :: M.Map String (Int, BU.ByteString),
                 isAffineScope :: Bool,
                 idCounter :: Int}
 
@@ -81,7 +82,8 @@ initEnv = Env{decls = [],
               enums = M.empty,
               vars = M.empty,
               kernels = M.empty,
-              inductions = M.empty,
+              affineDimensions = M.empty,
+              affineSymbols = M.empty,
               isAffineScope = False,
               idCounter = 0}
 
@@ -114,8 +116,11 @@ lookupVar name = do
     Just v -> return v
     Nothing -> error $ "cannot find variable " ++ name
 
-addInduction name id =
-  modifyUserState (\s -> s{inductions=M.insert name (M.size (inductions s), id) (inductions s)})
+addAffineDimension name id =
+  modifyUserState (\s -> s{affineDimensions=M.insert name (M.size (affineDimensions s), id) (affineDimensions s)})
+
+addAffineSymbol name id =
+  modifyUserState (\s -> s{affineSymbols=M.insert name (M.size (affineSymbols s), id) (affineSymbols s)})
 
 freshName :: EnvM BU.ByteString
 freshName = do
@@ -163,11 +168,13 @@ isStaticShapeMemref ty =
     (AST.MemRefType ds ty _ _) | all (isn't _Nothing) ds -> True
     _ -> False
 
-applyAffineExpr :: AST.Location -> M.Map String (Int, BU.ByteString) -> Affine.Expr -> EnvM [BindingOrName]
-applyAffineExpr loc vars e = do
+applyAffineExpr :: AST.Location -> M.Map String (Int, BU.ByteString) -> M.Map String (Int, BU.ByteString)
+                    -> Affine.Expr -> EnvM [BindingOrName]
+applyAffineExpr loc dimensions symbols e = do
   id <- freshName
-  let operands = L.sortBy (\a b -> compare (a^._2._1) (b^._2._1)) (M.toList vars) ^..traverse._2._2
-  return [Left $ id AST.:= Affine.apply loc (Affine.Map (M.size vars) 0 [e]) operands, Right id]
+  let ds = L.sortBy (\a b -> compare (a^._2._1) (b^._2._1)) (M.toList dimensions) ^..traverse._2._2
+      syms = L.sortBy (\a b -> compare (a^._2._1) (b^._2._1)) (M.toList symbols) ^..traverse._2._2
+  return [Left $ id AST.:= Affine.apply loc (Affine.Map (M.size dimensions) (M.size symbols) [e]) (ds++syms), Right id]
 
 data Options = Options {toLLVM :: Bool, dumpLoc :: Bool, jits :: [String], simplize :: Bool}
 
@@ -313,7 +320,7 @@ transFunction f@(FunDef var stmt node) = do
     indBs <- mapM (\(n, t, id) ->
                       if t == AST.IntegerType AST.Signless 32 then do
                         (indBs, indId) <- toIndex (getPos node) id t
-                        addInduction n indId
+                        addAffineSymbol n indId
                         case indBs of
                           Left indBs -> return [indBs]
                           _ -> return []
@@ -402,7 +409,7 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
   isAffineS <- isAffineScope <$> getUserState
   indBs <- if isAffineS && isConst && isn't _Nothing initBs && t^._1 == AST.IntegerType AST.Signless 32 then do
              (indBs, indId) <- toIndex (getPos node) resId (t^._1)
-             addInduction n indId
+             addAffineSymbol n indId
              return [indBs]
            else return []
   return $ join (fromMaybe [[]] initBs) ++ [b] ++ st ++ indBs
@@ -443,7 +450,8 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
       (CAssign CAddAssOp (CVar ident2 _) step _) -> ident1 == ident2
       (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp -> ident1 == ident2
       _ -> False) = do
-  vars <- inductions <$> getUserState
+  ds <- affineDimensions <$> getUserState
+  syms <- affineSymbols <$> getUserState 
   let name = identName ident0
       loc = getPos node
       step = case stepE of
@@ -451,17 +459,17 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
               (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp ->
                 CConst (CIntConst (cInteger 1) node)
               _ -> unsupported (posOf stepE) stepE
-      lbAE = exprToAffineExpr vars lb
-      ubAE = exprToAffineExpr vars ub
+      lbAE = exprToAffineExpr ds syms lb
+      ubAE = exprToAffineExpr ds syms ub
   if isn't _Nothing lbAE && isn't _Nothing ubAE then do
-    lbInd <- applyAffineExpr loc vars $ fromJust lbAE
-    ubInd <- applyAffineExpr loc vars $ fromJust ubAE
+    lbInd <- applyAffineExpr loc ds syms $ fromJust lbAE
+    ubInd <- applyAffineExpr loc ds syms $ fromJust ubAE
     b <- underScope $ do
       varName <- freshName
       let ty = AST.IntegerType AST.Signless 32
       (index, id) <- fromIndex loc varName ty
       addVar name (id, (ty, True), False)
-      addInduction name varName
+      addAffineDimension name varName
       transBlock [(varName, AST.IndexType)]
         [b | isn't _Right index, (Left b) <- [index]]
         body
@@ -479,7 +487,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
       let ty = AST.IntegerType AST.Signless 32
       (index, id) <- fromIndex loc varName ty
       addVar name (id, (ty, True), False)
-      -- addInduction name varName
+      -- addAffineSymbol name varName
       transBlock [(varName, AST.IndexType)]
         [b | isn't _Right index, (Left b) <- [index]]
         body
@@ -593,12 +601,13 @@ transExpr (CAssign op lhs rhs node) = do
           indexBs <- mapM transExpr indices
           let indexIds = map lastId (indexBs ^.. traverse . _1)
           toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
-          vars <- inductions <$> getUserState
-          let affineExprs = map (exprToAffineExpr vars) indices
+          ds <- affineDimensions <$> getUserState
+          syms <- affineSymbols <$> getUserState
+          let affineExprs = map (exprToAffineExpr ds syms) indices
               isAffineLoad = all (isn't _Nothing) affineExprs
           if isAffineLoad then do
             let es = map fromJust affineExprs
-            indBs <- mapM (applyAffineExpr loc vars) es
+            indBs <- mapM (applyAffineExpr loc ds syms) es
             return $ join (indexBs ^.. traverse . _1) ++
                       toIndices ^.. traverse . _1 ++ join indBs ++ [Left $ AST.Do $ Affine.store loc vId dstId (map lastId indBs)]
           else
@@ -676,12 +685,13 @@ transExpr (CIndex e index node) = do
           indexBs <- mapM transExpr indices
           let indexIds = map lastId (indexBs ^.. traverse . _1)
           toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
-          vars <- inductions <$> getUserState
-          let affineExprs = map (exprToAffineExpr vars) indices
+          ds <- affineDimensions <$> getUserState
+          syms <- affineSymbols <$> getUserState
+          let affineExprs = map (exprToAffineExpr ds syms) indices
               isAffineLoad = all (isn't _Nothing) affineExprs
           if isAffineLoad then do
             let es = map fromJust affineExprs
-            indBs <- mapM (applyAffineExpr loc vars) es
+            indBs <- mapM (applyAffineExpr loc ds syms) es
             return $ join (indexBs ^.. traverse . _1) ++
                       toIndices ^.. traverse . _1 ++ join indBs ++ [Left $ id AST.:= Affine.load loc ty srcId (map lastId indBs)]
           else
@@ -825,29 +835,31 @@ transExpr (CUnary CIndOp e node) = do
 transExpr e = unsupported (posOf e) e
 
 -- | Translate to affine Expr
-exprToAffineExpr :: M.Map String (Int, BU.ByteString) -> CExpr -> Maybe Affine.Expr
-exprToAffineExpr vars (CVar ident node) =
+exprToAffineExpr :: M.Map String (Int, BU.ByteString) -> M.Map String (Int, BU.ByteString) -> CExpr -> Maybe Affine.Expr
+exprToAffineExpr ds syms (CVar ident node) =
   let name = identName ident
-      v = M.lookup name vars
-   in fmap (\v -> Affine.Dimension $ v ^._1) v
-exprToAffineExpr vars c@(CConst (CIntConst _ _)) =
+      d = M.lookup name ds
+   in case d of
+        Just (d, _) -> Just (Affine.Dimension d)
+        Nothing -> fmap (\v -> Affine.Symbol $ v ^._1) (M.lookup name syms)
+exprToAffineExpr ds syms c@(CConst (CIntConst _ _)) =
   fmap (Affine.Constant . fromIntegral) (intValue c)
-exprToAffineExpr vars (CBinary CAddOp lhs rhs node) = do
-  l <- exprToAffineExpr vars lhs
-  r <- exprToAffineExpr vars rhs
+exprToAffineExpr ds syms (CBinary CAddOp lhs rhs node) = do
+  l <- exprToAffineExpr ds syms lhs
+  r <- exprToAffineExpr ds syms rhs
   return $ Affine.Add l r
-exprToAffineExpr vars (CBinary op lhs rhs@(CConst (CIntConst _ _)) node)
+exprToAffineExpr ds syms (CBinary op lhs rhs@(CConst (CIntConst _ _)) node)
   | op == CMulOp ||
     op == CDivOp ||
     op == CRmdOp = do
-  l <- exprToAffineExpr vars lhs
-  r <- exprToAffineExpr vars rhs
+  l <- exprToAffineExpr ds syms lhs
+  r <- exprToAffineExpr ds syms rhs
   return $ (case op of
               CMulOp -> Affine.Mul
               CRmdOp -> Affine.Mod
               CDivOp -> Affine.FloorDiv
               _ -> unsupported (posOf node) op) l r
-exprToAffineExpr _ _ = Nothing
+exprToAffineExpr _ _ _ = Nothing
 
 -- | Translate a constant expression
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)

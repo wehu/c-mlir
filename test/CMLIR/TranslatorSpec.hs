@@ -1277,33 +1277,37 @@ void foo(int i) {
   }
 }
       |] `shouldBeTranslatedAs` [r|
-#map0 = affine_map<(d0) -> (d0)>
-#map1 = affine_map<(d0) -> (0)>
-#map2 = affine_map<(d0) -> (10)>
-#map3 = affine_map<(d0) -> (d1)>
+#map0 = affine_map<()[s0] -> (s0)>
+#map1 = affine_map<()[s0] -> (0)>
+#map2 = affine_map<()[s0] -> (10)>
+#map3 = affine_map<(d0) -> (d0)>
+#map4 = affine_map<(d0)[s0] -> (d0)>
+#map5 = affine_map<(d0)[s0] -> (0)>
+#map6 = affine_map<(d0)[s0] -> (10)>
+#map7 = affine_map<(d0)[s0] -> (d1)>
 module  {
   func @foo(%arg0: i32) attributes {llvm.emit_c_interface} {
     %0 = arith.index_cast %arg0 : i32 to index
     %1 = memref.alloca() : memref<10xi32>
     %c1_i32 = arith.constant 1 : i32
     %2 = arith.index_cast %arg0 : i32 to index
-    %3 = affine.apply #map0(%0)
+    %3 = affine.apply #map0()[%0]
     affine.store %c1_i32, %1[%3] : memref<10xi32>
-    %4 = affine.apply #map1(%0)
-    %5 = affine.apply #map2(%0)
-    affine.for %arg1 = #map0(%4) to #map0(%5) {
+    %4 = affine.apply #map1()[%0]
+    %5 = affine.apply #map2()[%0]
+    affine.for %arg1 = #map3(%4) to #map3(%5) {
       %6 = arith.index_cast %arg1 : index to i32
       %c2_i32 = arith.constant 2 : i32
       %7 = arith.index_cast %6 : i32 to index
-      %8 = affine.apply #map3(%arg1)
+      %8 = affine.apply #map4(%arg1)[%0]
       affine.store %c2_i32, %1[%8] : memref<10xi32>
-      %9 = affine.apply #map1(%arg1)
-      %10 = affine.apply #map2(%arg1)
-      affine.for %arg2 = #map0(%9) to #map0(%10) {
+      %9 = affine.apply #map5(%arg1)[%0]
+      %10 = affine.apply #map6(%arg1)[%0]
+      affine.for %arg2 = #map3(%9) to #map3(%10) {
         %11 = arith.index_cast %arg2 : index to i32
         %c3_i32 = arith.constant 3 : i32
         %12 = arith.index_cast %11 : i32 to index
-        %13 = affine.apply #map3(%arg2)
+        %13 = affine.apply #map7(%arg2)[%0]
         affine.store %c3_i32, %1[%13] : memref<10xi32>
       }
     }
