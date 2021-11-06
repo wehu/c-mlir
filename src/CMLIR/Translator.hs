@@ -639,8 +639,15 @@ transExpr (CBinary bop lhs rhs node) = do
   let isF = case lhsTy of
               AST.IntegerType _ _ -> False
               AST.IndexType -> False
+              AST.VectorType _ t ->
+                case t of
+                  AST.IntegerType _ _ -> False
+                  AST.IndexType -> False
+                  _ -> True
               _ -> True
-      boolTy = AST.IntegerType AST.Signless 1
+      boolTy = case lhsTy of
+                 AST.VectorType ds t -> AST.VectorType ds (AST.IntegerType AST.Signless 1)
+                 _ -> AST.IntegerType AST.Signless 1
       (resTy, resSign) | bop == CEqOp ||
                          bop == CNeqOp ||
                          bop == CLeOp ||

@@ -2124,3 +2124,40 @@ module  {
   }
 }
       |]
+    
+    it "can translate vector op" $ do
+      [r|
+typedef char char2 __attribute__((__ext_vector_type__(2)));
+typedef float float2 __attribute__((__ext_vector_type__(2)));
+
+void foo() {
+  char2 v0, v1;
+  v0 + v1;
+  float2 v2, v3;
+  v2 + v3;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %c0 = arith.constant 0 : index
+    %0 = memref.alloca(%c0) : memref<?xvector<2xi8>>
+    %c0_0 = arith.constant 0 : index
+    %1 = memref.alloca(%c0_0) : memref<?xvector<2xi8>>
+    %c0_1 = arith.constant 0 : index
+    %2 = affine.load %0[%c0_1] : memref<?xvector<2xi8>>
+    %c0_2 = arith.constant 0 : index
+    %3 = affine.load %1[%c0_2] : memref<?xvector<2xi8>>
+    %4 = arith.addi %2, %3 : vector<2xi8>
+    %c0_3 = arith.constant 0 : index
+    %5 = memref.alloca(%c0_3) : memref<?xvector<2xf32>>
+    %c0_4 = arith.constant 0 : index
+    %6 = memref.alloca(%c0_4) : memref<?xvector<2xf32>>
+    %c0_5 = arith.constant 0 : index
+    %7 = affine.load %5[%c0_5] : memref<?xvector<2xf32>>
+    %c0_6 = arith.constant 0 : index
+    %8 = affine.load %6[%c0_6] : memref<?xvector<2xf32>>
+    %9 = arith.addf %7, %8 : vector<2xf32>
+    return
+  }
+}
+      |]
