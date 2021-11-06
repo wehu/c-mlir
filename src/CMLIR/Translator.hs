@@ -838,6 +838,7 @@ data DimensionOrSymbolOrConst =
   ADimension | ASymbol | AConst
   deriving (Eq)
 
+inferDsc :: DimensionOrSymbolOrConst -> DimensionOrSymbolOrConst -> DimensionOrSymbolOrConst
 inferDsc lDsc rDsc
   | lDsc == ADimension || rDsc == ADimension = ADimension
   | lDsc == ASymbol || rDsc == ASymbol = ASymbol
