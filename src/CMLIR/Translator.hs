@@ -476,6 +476,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
     lbInd <- applyAffineExpr loc ds syms $ fromJust lbAE ^._1
     ubInd <- applyAffineExpr loc ds syms $ fromJust ubAE ^._1
     b <- underScope $ do
+      modifyUserState (\s -> s{isAffineScope = True})
       varName <- freshName
       let ty = AST.IntegerType AST.Signless 32
       (index, id) <- fromIndex loc varName ty
@@ -582,10 +583,10 @@ transExpr (CVar ident node) = do
       else return ([Right id], (ty, sign))
 transExpr (CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
-  (id, ty, srcBs, isAssignable, isDeref) <- case src of
-                       CVar ident _ -> (\(a, b, c) -> (a, b, [], c, False)) <$> lookupVar (identName ident)
-                       (CUnary CIndOp e node) | null indices -> (\(a, b) -> (lastId a, b, a, False, True)) <$> transExpr e
-                       _ -> (\(a, b) -> (lastId a, b, a, False, True)) <$> transExpr src
+  (id, ty, srcBs, isAssignable) <- case src of
+                       CVar ident _ -> (\(a, b, c) -> (a, b, [], c)) <$> lookupVar (identName ident)
+                       (CUnary CIndOp e node) | null indices -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr e
+                       _ -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr src
   (rhsBs, rhsTy) <- transExpr (case op of
                       CAssignOp -> rhs
                       CMulAssOp -> CBinary CMulOp lhs rhs node
