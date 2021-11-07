@@ -296,6 +296,35 @@ module  {
 }
 ```
 
+### Bultin Conv2D example
+
+```c
+#define H  3
+#define W  4
+#define R  1
+#define S  1
+
+void foo() {
+  float lhs[H][W];
+  float rhs[R][S];
+  float output[H][W];
+  conv_2d(lhs, rhs, output);
+}
+```
+
+Output IR as below:
+```mlir
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<3x4xf32>
+    %1 = memref.alloca() : memref<1x1xf32>
+    %2 = memref.alloca() : memref<3x4xf32>
+    linalg.conv_2d ins(%0, %1 : memref<3x4xf32>, memref<1x1xf32>) outs(%2 : memref<3x4xf32>)
+    return
+  }
+}
+```
+
 ### Launch example
 ```c
 __kernel void foo(__global float *input) {}

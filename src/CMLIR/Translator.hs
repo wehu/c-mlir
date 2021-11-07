@@ -4,6 +4,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE LambdaCase #-}
 module CMLIR.Translator where
 
 import qualified MLIR.AST.Builder as AST
@@ -23,6 +24,7 @@ import qualified MLIR.AST.Dialect.Affine as Affine
 import qualified CMLIR.Dialect.Affine as Affine
 import qualified CMLIR.Dialect.SCF as SCF
 import qualified CMLIR.Dialect.Vector as Vector
+import qualified CMLIR.Dialect.Linalg as Linalg
 
 import Language.C.Syntax.AST
 import Language.C.Analysis.AstAnalysis
@@ -935,6 +937,36 @@ transExpr c@(CCall (CVar ident _) args node) = do
           (srcB, (srcTy, srcSign)) = argsBs !! 1
           copy = AST.Do $ MemRef.copy loc (lastId srcB) (lastId dstB)
       return (join (argsBs ^..traverse._1) ++ [Left copy], (dstTy, dstSign))
+    "conv_2d" -> do
+      when (L.length argsBs /= 3) $ error $ "conv_2d expected 3 arguments" ++ show (posOf node)
+      unless (all (\case
+                   AST.MemRefType{} -> True
+                   _ -> False) (argsBs ^..traverse._2._1)) $ 
+            error $ "conv_2d expected array as arguments" ++ show (posOf node)
+      id0 <- freshName
+      id1 <- freshName
+      id2 <- freshName
+      id3 <- freshName
+      let (lhsB, (lhsTy, lhsSign)) = head argsBs
+          (rhsB, (rhsTy, rhsSign)) = argsBs !! 1
+          (outputB, (outputTy, outputSign)) = argsBs !! 2
+      b <- underScope $ do
+        let lhsN = BU.toString id1
+            rhsN = BU.toString id2
+            outputN = BU.toString id3 
+        addVar lhsN (id1, (AST.memrefTypeElement lhsTy, lhsSign), False)
+        addVar rhsN (id2, (AST.memrefTypeElement rhsTy, rhsSign), False)
+        addVar outputN (id3, (AST.memrefTypeElement outputTy, outputSign), False)
+        transExpr (CBinary CAddOp (CVar (Ident outputN (read outputN) node) node)
+                           (CBinary CMulOp (CVar (Ident lhsN (read lhsN) node) node)
+                                           (CVar (Ident rhsN (read rhsN) node) node) node) node)
+      let conv2d = AST.Do $ Linalg.conv2d loc (lastId lhsB) (lastId rhsB) (lastId outputB)
+                             (AST.Block id0 [(id1, AST.memrefTypeElement lhsTy),
+                                             (id2, AST.memrefTypeElement rhsTy),
+                                             (id3, AST.memrefTypeElement outputTy)]
+                                            (b^._1 ^..traverse._Left ++
+                                            [AST.Do $ Linalg.yield2 loc [lastId $ b^._1]]))
+      return (join (argsBs ^..traverse._1) ++ [Left conv2d], (outputTy, outputSign))
     _ -> do
       (_, (ty, sign), _) <- lookupVar name
       let resTy = case ty of
