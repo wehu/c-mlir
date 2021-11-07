@@ -763,8 +763,41 @@ transExpr c@(CCast t e node) = do
                               else return (s, index+1)) ([], 0::Int) ds
             return $ join (sizes ^._1) ++ [Left $ id AST.:= constIndex0 loc
                    ,Left $ dstId AST.:= MemRef.view loc dstTy srcId id (map lastId (sizes ^._1))]
-          | isMemref srcTy && isMemref dstTy =
-            return [Left $ dstId AST.:= MemRef.cast loc dstTy srcId]
+          | isMemref srcTy && isMemref dstTy = do
+            let srcRank = L.length $ AST.memrefTypeShape srcTy
+                dstRank = L.length $ AST.memrefTypeShape dstTy
+            if srcRank /= dstRank then do
+              if AST.memrefTypeShape dstTy == [Nothing] then do
+                size <- foldM (\(s, index) d -> do
+                                id0 <- freshName
+                                id1 <- freshName
+                                id2 <- freshName
+                                return (s ++ [Left $ id0 AST.:= constInt loc AST.IndexType index
+                                              ,Left $ id1 AST.:= MemRef.dim loc srcId id0
+                                              ,Left $ id2 AST.:= Arith.MulI loc AST.IndexType id1 (lastId s)], index+1))
+                                              ([Left $ id AST.:= constInt loc AST.IndexType 1], 0::Int)
+                                              (AST.memrefTypeShape srcTy)
+                id0 <- freshName
+                id1 <- freshName
+                let shape = id0 AST.:= MemRef.alloca loc (AST.MemRefType [Just 1] AST.IndexType Nothing Nothing) [] []
+                    c0 = id1 AST.:= constIndex0 loc
+                    st = AST.Do $ Affine.store loc (lastId (size ^._1)) id0 [id1]
+                return $ size^._1 ++ [Left shape, Left c0, Left st, Left $ dstId AST.:= MemRef.reshape loc dstTy srcId id0]
+              else if all (isn't _Nothing) (AST.memrefTypeShape dstTy) then do
+                sizes <- mapM (\d -> do
+                                id0 <- freshName
+                                return [Left $ id0 AST.:= constInt loc AST.IndexType (fromJust d)])
+                                (AST.memrefTypeShape dstTy)
+                id0 <- freshName
+                let shape = id0 AST.:= MemRef.alloca loc (AST.MemRefType [Just dstRank] AST.IndexType Nothing Nothing) [] []
+                st <- foldM (\(s, index) size -> do
+                              id1 <- freshName
+                              let c = id1 AST.:= constInt loc AST.IndexType index
+                              return (s ++ [Left c, Left $ AST.Do $ Affine.store loc (lastId size) id0 [id1]], index+1)) 
+                              ([], 0::Int) sizes
+                return $ join sizes ++ [Left shape] ++ st ^._1 ++ [Left $ dstId AST.:= MemRef.reshape loc dstTy srcId id0]
+              else unsupported (posOf node) c
+            else return [Left $ dstId AST.:= MemRef.cast loc dstTy srcId]
           | otherwise = unsupported (posOf c) c
     casts <- casts
     return (srcBs ++ casts ++ [Right dstId], (dstTy, dstSign))

@@ -2241,3 +2241,44 @@ module  {
   }
 }
       |]
+    
+    it "can translate more array to pointer casting" $ do
+      [r|
+void foo() {
+  int b[10][10];
+  int *c = (int *)b;
+  (int [10][10])c;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<10x10xi32>
+    %c1 = arith.constant 1 : index
+    %c0 = arith.constant 0 : index
+    %1 = memref.dim %0, %c0 : memref<10x10xi32>
+    %2 = arith.muli %1, %c1 : index
+    %c1_0 = arith.constant 1 : index
+    %3 = memref.dim %0, %c1_0 : memref<10x10xi32>
+    %4 = arith.muli %3, %2 : index
+    %5 = memref.alloca() : memref<1xindex>
+    %c0_1 = arith.constant 0 : index
+    affine.store %4, %5[%c0_1] : memref<1xindex>
+    %6 = memref.reshape %0(%5) : (memref<10x10xi32>, memref<1xindex>) -> memref<?xi32>
+    %c1_2 = arith.constant 1 : index
+    %7 = memref.alloca(%c1_2) : memref<?xmemref<?xi32>>
+    %c0_3 = arith.constant 0 : index
+    affine.store %6, %7[%c0_3] : memref<?xmemref<?xi32>>
+    %c0_4 = arith.constant 0 : index
+    %8 = affine.load %7[%c0_4] : memref<?xmemref<?xi32>>
+    %c10 = arith.constant 10 : index
+    %c10_5 = arith.constant 10 : index
+    %9 = memref.alloca() : memref<2xindex>
+    %c0_6 = arith.constant 0 : index
+    affine.store %c10, %9[%c0_6] : memref<2xindex>
+    %c1_7 = arith.constant 1 : index
+    affine.store %c10_5, %9[%c1_7] : memref<2xindex>
+    %10 = memref.reshape %8(%9) : (memref<?xi32>, memref<2xindex>) -> memref<10x10xi32>
+    return
+  }
+}
+      |]

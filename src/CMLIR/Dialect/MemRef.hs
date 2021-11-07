@@ -129,3 +129,14 @@ dim loc src d = Operation
   , opSuccessors = []
   , opAttributes = NoAttrs
   }
+
+reshape :: Location -> Type -> Name -> Name -> Operation
+reshape loc ty src shape = Operation
+  { opName = "memref.reshape"
+  , opLocation = loc
+  , opResultTypes = Explicit [ty]
+  , opOperands = [src, shape]
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = NoAttrs
+  }
