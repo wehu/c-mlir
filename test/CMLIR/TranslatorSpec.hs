@@ -1491,11 +1491,14 @@ void foo() {
 module  {
   func @foo() attributes {llvm.emit_c_interface} {
     %0 = memref.alloca() : memref<10xi8>
-    %1 = memref.cast %0 : memref<10xi8> to memref<?xi8>
-    %c1 = arith.constant 1 : index
-    %2 = memref.alloca(%c1) : memref<?xmemref<?xi8>>
     %c0 = arith.constant 0 : index
-    affine.store %1, %2[%c0] : memref<?xmemref<?xi8>>
+    %1 = memref.dim %0, %c0 : memref<10xi8>
+    %c0_0 = arith.constant 0 : index
+    %2 = memref.view %0[%c0_0][%1] : memref<10xi8> to memref<?xi8>
+    %c1 = arith.constant 1 : index
+    %3 = memref.alloca(%c1) : memref<?xmemref<?xi8>>
+    %c0_1 = arith.constant 0 : index
+    affine.store %2, %3[%c0_1] : memref<?xmemref<?xi8>>
     return
   }
 }
@@ -2210,6 +2213,30 @@ module  {
     %1 = memref.alloca(%c1) : memref<?xmemref<?xi8>>
     %c0_0 = arith.constant 0 : index
     affine.store %0, %1[%c0_0] : memref<?xmemref<?xi8>>
+    return
+  }
+}
+      |]
+    
+    it "can translate dynamic casting" $ do
+      [r|
+void foo() {
+  float *a = (float *)malloc(10);
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %c10_i32 = arith.constant 10 : i32
+    %0 = arith.index_cast %c10_i32 : i32 to index
+    %1 = memref.alloc(%0) : memref<?xi8>
+    %c0 = arith.constant 0 : index
+    %2 = memref.dim %1, %c0 : memref<?xi8>
+    %c0_0 = arith.constant 0 : index
+    %3 = memref.view %1[%c0_0][%2] : memref<?xi8> to memref<?xf32>
+    %c1 = arith.constant 1 : index
+    %4 = memref.alloca(%c1) : memref<?xmemref<?xf32>>
+    %c0_1 = arith.constant 0 : index
+    affine.store %3, %4[%c0_1] : memref<?xmemref<?xf32>>
     return
   }
 }

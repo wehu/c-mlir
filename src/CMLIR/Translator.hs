@@ -738,26 +738,35 @@ transExpr c@(CCast t e node) = do
     let loc = getPos node
         srcId = lastId srcBs
         casts
-          | isFloat srcTy && isFloat dstTy =
-            [Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncF else Arith.ExtF) loc dstTy srcId]
+          | isFloat srcTy && isFloat dstTy = do
+            return [Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncF else Arith.ExtF) loc dstTy srcId]
           | isInt srcTy && isInt dstTy =
-            [Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc dstTy srcId]
+            return [Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc dstTy srcId]
           | isFloat srcTy && isInt dstTy && bits srcTy == bits dstTy =
-            [Left $ dstId AST.:= (if srcSign then Arith.FPToSI else Arith.FPToUI) loc (AST.IntegerType AST.Signless (bits srcTy)) srcId]
+            return [Left $ dstId AST.:= (if srcSign then Arith.FPToSI else Arith.FPToUI) loc (AST.IntegerType AST.Signless (bits srcTy)) srcId]
           | isFloat srcTy && isInt dstTy =
-            [Left $ id AST.:= (if srcSign then Arith.FPToSI else Arith.FPToUI) loc (AST.IntegerType AST.Signless (bits srcTy)) srcId
+            return [Left $ id AST.:= (if srcSign then Arith.FPToSI else Arith.FPToUI) loc (AST.IntegerType AST.Signless (bits srcTy)) srcId
             ,Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc dstTy id]
           | isInt srcTy && isFloat dstTy && bits srcTy == bits dstTy =
-            [Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc (floatTy $ bits srcTy) srcId]
+            return [Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc (floatTy $ bits srcTy) srcId]
           | isInt srcTy && isFloat dstTy =
-            [Left $ id AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc (AST.IntegerType AST.Signless (bits dstTy)) srcId
+            return [Left $ id AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc (AST.IntegerType AST.Signless (bits dstTy)) srcId
             ,Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc dstTy id]
-          | isI8Memref srcTy && isStaticShapeMemref dstTy =
-            [Left $ id AST.:= constIndex0 loc
-            ,Left $ dstId AST.:= MemRef.view loc dstTy srcId id []]
+          | isI8Memref srcTy && isMemref dstTy = do
+            let ds = AST.memrefTypeShape dstTy
+            sizes <- foldM (\(s, index) d ->
+                              if isn't _Just d then do
+                                id0 <- freshName
+                                id1 <- freshName
+                                return (s ++ [[Left $ id0 AST.:= constInt loc AST.IndexType index
+                                              ,Left $ id1 AST.:= MemRef.dim loc srcId id0]], index+1)
+                              else return (s, index+1)) ([], 0::Int) ds
+            return $ join (sizes ^._1) ++ [Left $ id AST.:= constIndex0 loc
+                   ,Left $ dstId AST.:= MemRef.view loc dstTy srcId id (map lastId (sizes ^._1))]
           | isMemref srcTy && isMemref dstTy =
-            [Left $ dstId AST.:= MemRef.cast loc dstTy srcId]
+            return [Left $ dstId AST.:= MemRef.cast loc dstTy srcId]
           | otherwise = unsupported (posOf c) c
+    casts <- casts
     return (srcBs ++ casts ++ [Right dstId], (dstTy, dstSign))
   where isFloat ty = case ty of
                        AST.Float16Type -> True

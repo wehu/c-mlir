@@ -118,3 +118,14 @@ allocaScopeReturn loc types args = Operation
   , opSuccessors = []
   , opAttributes = NoAttrs
   }
+
+dim :: Location -> Name -> Name -> Operation
+dim loc src d = Operation
+  { opName = "memref.dim"
+  , opLocation = loc
+  , opResultTypes = Explicit [IndexType]
+  , opOperands = [src, d]
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = NoAttrs
+  }
