@@ -2282,3 +2282,51 @@ module  {
   }
 }
       |]
+
+    it "can translate array of pointers" $ do
+      [r|
+__kernel void foo(__global float *input) {}
+
+void launch(const char *, int, int, char **);
+
+void main() {
+    char *inputs[1];
+    inputs[0] = malloc(10);
+    launch("foo", 1, 1, (char **)inputs);
+    free(inputs[0]);
+}
+      |] `shouldBeTranslatedAs` [r|
+#map = affine_map<() -> (0)>
+module  {
+  func private @launch(memref<?xi8>, i32, i32, memref<?xmemref<?xi8>>)
+  func @foo(%arg0: memref<?xf32, 2>) attributes {cl.kernel = true, llvm.emit_c_interface} {
+    return
+  }
+  func @main() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<1xmemref<?xi8>>
+    %c10_i32 = arith.constant 10 : i32
+    %1 = arith.index_cast %c10_i32 : i32 to index
+    %2 = memref.alloc(%1) : memref<?xi8>
+    %c0_i32 = arith.constant 0 : i32
+    %3 = arith.index_cast %c0_i32 : i32 to index
+    %4 = affine.apply #map()
+    affine.store %2, %0[%4] : memref<1xmemref<?xi8>>
+    %cst = arith.constant dense<[102, 111, 111]> : vector<3xi8>
+    %c3 = arith.constant 3 : index
+    %c0 = arith.constant 0 : index
+    %5 = memref.alloca(%c3) : memref<?xi8>
+    vector.store %cst, %5[%c0] : memref<?xi8>, vector<3xi8>
+    %c1_i32 = arith.constant 1 : i32
+    %c1_i32_0 = arith.constant 1 : i32
+    %6 = memref.cast %0 : memref<1xmemref<?xi8>> to memref<?xmemref<?xi8>>
+    call @launch(%5, %c1_i32, %c1_i32_0, %6) : (memref<?xi8>, i32, i32, memref<?xmemref<?xi8>>) -> ()
+    %c0_i32_1 = arith.constant 0 : i32
+    %7 = arith.index_cast %c0_i32_1 : i32 to index
+    %8 = affine.apply #map()
+    %9 = affine.load %0[%8] : memref<1xmemref<?xi8>>
+    memref.dealloc %9 : memref<?xi8>
+    return
+  }
+}
+      |]
+    

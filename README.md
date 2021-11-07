@@ -296,6 +296,47 @@ module  {
 }
 ```
 
+### Launch example
+```c
+__kernel void foo(__global float *input) {}
+
+void launch(const char *, int, int, char **);
+
+void main() {
+    char *inputs[1];
+    inputs[0] = malloc(10);
+    launch("foo", 1, 1, (char **)inputs);
+    free(inputs[0]);
+}
+```
+
+Output IR as below:
+```mlir
+module  {
+  func private @launch(memref<?xi8>, i32, i32, memref<?xmemref<?xi8>>)
+  func @foo(%arg0: memref<?xf32, 2>) attributes {cl.kernel = true, llvm.emit_c_interface} {
+    return
+  }
+  func @main() attributes {llvm.emit_c_interface} {
+    %c0 = arith.constant 0 : index
+    %c1_i32 = arith.constant 1 : i32
+    %cst = arith.constant dense<[102, 111, 111]> : vector<3xi8>
+    %0 = memref.alloca() : memref<1xmemref<?xi8>>
+    %1 = memref.alloc() : memref<10xi8>
+    %2 = memref.cast %1 : memref<10xi8> to memref<?xi8>
+    affine.store %2, %0[0] : memref<1xmemref<?xi8>>
+    %3 = memref.alloca() : memref<3xi8>
+    %4 = memref.cast %3 : memref<3xi8> to memref<?xi8>
+    vector.store %cst, %3[%c0] : memref<3xi8>, vector<3xi8>
+    %5 = memref.cast %0 : memref<1xmemref<?xi8>> to memref<?xmemref<?xi8>>
+    call @launch(%4, %c1_i32, %c1_i32, %5) : (memref<?xi8>, i32, i32, memref<?xmemref<?xi8>>) -> ()
+    %6 = affine.load %0[0] : memref<1xmemref<?xi8>>
+    memref.dealloc %6 : memref<?xi8>
+    return
+  }
+}
+```
+
 ## Install
 
 Install stack
