@@ -1185,7 +1185,8 @@ type_ tdefs pos ms (ArrayType t size quals attrs) =
   let s = arraySize size
       msAttr = AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms
    in case type_ tdefs pos ms t of
-        (AST.MemRefType sizes t Nothing ms, sign) -> (AST.MemRefType (s:sizes) t Nothing ms, sign)
+        (AST.MemRefType sizes t Nothing ms, sign) | all (isn't _Nothing) sizes ->
+          (AST.MemRefType (s:sizes) t Nothing ms, sign)
         (t, sign) -> (AST.MemRefType [s] t Nothing (Just msAttr), sign)
 type_ tdefs pos ms ty@(TypeDefType (TypeDefRef ident t _) quals attrs) = 
   let name = identName ident

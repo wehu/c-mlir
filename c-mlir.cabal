@@ -28,6 +28,7 @@ library
       CMLIR
       CMLIR.Dialect.Affine
       CMLIR.Dialect.Arith
+      CMLIR.Dialect.Linalg
       CMLIR.Dialect.MemRef
       CMLIR.Dialect.SCF
       CMLIR.Dialect.Std
