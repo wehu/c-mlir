@@ -2332,15 +2332,10 @@ module  {
     
     it "can translate conv_2d" $ do
       [r|
-#define H  3
-#define W  4
-#define R  1
-#define S  1
-
 void foo() {
-  float lhs[H][W];
-  float rhs[R][S];
-  float output[H][W];
+  float lhs[3][4];
+  float rhs[1][1];
+  float output[3][4];
   conv_2d(lhs, rhs, output);
 }
       |] `shouldBeTranslatedAs` [r|
