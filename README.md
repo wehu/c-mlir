@@ -245,7 +245,7 @@ void foo() {
   int v1[2];
   vload(v1[0], &v0);
   v0 += v0;
-  vstore(v1[0], v0);
+  vstore(v0, v1[0]);
 }
 ```
 

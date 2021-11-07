@@ -903,7 +903,7 @@ transExpr c@(CCall (CVar ident _) [src', dst] node) | identName ident == "vload"
       st = AST.Do $ Affine.store loc id (lastId dstBs) [id0]
   return (srcBs ++ join (indexBs ^..traverse._1) ++ toIndex ^..traverse._1++dstBs++
           [Left load, Left c0, Left st, Right id], (ty, dstSign))
-transExpr c@(CCall (CVar ident _) [dst', v] node) | identName ident == "vstore" = do
+transExpr c@(CCall (CVar ident _) [v, dst'] node) | identName ident == "vstore" = do
   let loc = getPos node
       (dst, indices) = collectIndices dst' []
   (dstBs, (dstTy, dstSign)) <- transExpr dst
