@@ -197,10 +197,10 @@ translateToMLIR opts tu = do
   MLIR.withContext (\ctx -> do
     MLIR.registerAllDialects ctx
     let (ast, fs) = let res = runTrav initEnv $ do
-                             -- record all kernels
-                             recordKernelFunctions tu
                              -- analyze globals
                              withExtDeclHandler (analyseAST tu) handlers
+                             -- record all kernels
+                             recordKernelFunctions tu
                              -- add all enums
                              getUserState  >>= mapM_ addEnum . enumerators
                              -- add all global function declarations
