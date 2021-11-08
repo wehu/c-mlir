@@ -2514,23 +2514,30 @@ typedef struct a {
 } aa;
 
 void foo() {
-  aa a;
+  aa a = {1, 2};
   int i;
   i = a.f1;
+  a.f1 = 1;
 }
       |] `shouldBeTranslatedAs` [r|
 module  {
   func @foo() attributes {llvm.emit_c_interface} {
+    %c1_i32 = arith.constant 1 : i32
+    %c2_i32 = arith.constant 2 : i32
+    %0 = memref.alloca() : memref<2xi32>
+    %c0 = arith.constant 0 : index
+    affine.store %c1_i32, %0[%c0] : memref<2xi32>
     %c1 = arith.constant 1 : index
-    %0 = memref.alloca(%c1) : memref<?xvector<2xi32>>
+    affine.store %c2_i32, %0[%c1] : memref<2xi32>
     %c1_0 = arith.constant 1 : index
     %1 = memref.alloca(%c1_0) : memref<?xi32>
-    %c0 = arith.constant 0 : index
-    %2 = affine.load %0[%c0] : memref<?xvector<2xi32>>
-    %c1_i32 = arith.constant 1 : i32
-    %3 = vector.extractelement %2[%c1_i32 : i32] : vector<2xi32>
-    %c0_1 = arith.constant 0 : index
-    affine.store %3, %1[%c0_1] : memref<?xi32>
+    %c1_1 = arith.constant 1 : index
+    %2 = affine.load %0[%c1_1] : memref<2xi32>
+    %c0_2 = arith.constant 0 : index
+    affine.store %2, %1[%c0_2] : memref<?xi32>
+    %c1_i32_3 = arith.constant 1 : i32
+    %c1_4 = arith.constant 1 : index
+    affine.store %c1_i32_3, %0[%c1_4] : memref<2xi32>
     return
   }
 }

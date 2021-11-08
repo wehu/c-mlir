@@ -591,11 +591,14 @@ transExpr (CVar ident node) = do
       else return ([Right id], (ty, sign, tn))
 transExpr a@(CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
-  (id, ty, srcBs, isAssignable) <- case src of
-                       CVar ident _ -> (\(a, b, c) -> (a, b, [], c)) <$> lookupVar (identName ident)
-                       CMember e ident _ _ -> unsupported (posOf node) a
-                       (CUnary CIndOp e node) | null indices -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr e
-                       _ -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr src
+  (id, ty, srcBs, isAssignable, member) <- case src of
+                       CVar ident _ -> (\(a, b, c) -> (a, b, [], c, Nothing)) <$> lookupVar (identName ident)
+                       CMember (CVar ident _) member _ _ -> do
+                         (a, (_, _, tn), c) <- lookupVar (identName ident)
+                         (index, ty) <- calcStructFieldIndex (posOf node) tn member
+                         return (a, ty, [], c, Just index)
+                       (CUnary CIndOp e node) | null indices -> (\(a, b) -> (lastId a, b, a, False, Nothing)) <$> transExpr e
+                       _ -> (\(a, b) -> (lastId a, b, a, False, Nothing)) <$> transExpr src
   (rhsBs, rhsTy) <- transExpr (case op of
                       CAssignOp -> rhs
                       CMulAssOp -> CBinary CMulOp lhs rhs node
@@ -611,7 +614,7 @@ transExpr a@(CAssign op lhs rhs node) = do
   let rhsId = lastId rhsBs
   if null indices then do
     id0 <- freshName
-    let c0 = [Left $ id0 AST.:= constIndex0 (getPos node)]
+    let c0 = [Left $ id0 AST.:= constInt (getPos node) AST.IndexType (member ^.non 0)]
         st = Affine.store (getPos node) rhsId id [id0]
         op1 = AST.Do st{AST.opLocation = getPos node}
     return (srcBs ++ rhsBs ++ c0 ++ [Left op1], ty)
@@ -1080,8 +1083,8 @@ transExpr m@(CMember e ident _ node) = do
   id0 <- freshName
   id1 <- freshName
   let loc = getPos node
-      cIndex = id0 AST.:= constInt loc (AST.IntegerType AST.Signless 32) index
-      elem = id1 AST.:= Vector.ExtractElement loc resTy (lastId eBs) id0
+      cIndex = id0 AST.:= constInt loc AST.IndexType index
+      elem = id1 AST.:= Affine.load loc resTy (lastId eBs) [id0]
   return (eBs ++ [Left cIndex, Left elem, Right id1], (resTy, resSign, resTn))
 transExpr e = unsupported (posOf e) e
 
@@ -1315,7 +1318,7 @@ structType ms t@(CompType ref StructTag members attrs node) = do
                     t -> unsupported (posOf t) t) members
   when (L.length (L.foldl' (\s t -> if null s then [t] else if head s ^._2._1 /= t ^._2._1 then t:s else s) [] mTypes) /= 1) $
     error $ "currently struct only supports all fields with same type" ++ show (posOf node)
-  return (AST.VectorType [L.length mTypes] (head mTypes ^._2._1), False, Just ref)
+  return (AST.MemRefType [Just $ L.length mTypes] (head mTypes ^._2._1) Nothing Nothing, False, Just ref)
 structType _ t = unsupported (posOf t) t
 
 getExtVectorAttrs :: Attributes -> [Int]
