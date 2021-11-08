@@ -1156,7 +1156,7 @@ exprToAffineExpr _ _ _ = Nothing
 -- | Translate a constant expression
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)
 transConst (CIntConst i node) = transInt i (getPos node)
-transConst (CCharConst c node) = transChar c (getPos node)
+transConst (CCharConst c node) = transChar (posOf node) c (getPos node)
 transConst (CFloatConst f node) = transFloat f (getPos node)
 transConst (CStrConst s node) = transStr s (getPos node)
 
@@ -1178,12 +1178,12 @@ transInt (CInteger i _ flag) loc = do
   return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral i))], (ty, sign, Nothing))
 
 -- | Translate a char literal
-transChar :: CChar -> AST.Location -> EnvM ([BindingOrName], SType)
-transChar (CChar c _) loc = do
+transChar :: Position -> CChar -> AST.Location -> EnvM ([BindingOrName], SType)
+transChar pos (CChar c _) loc = do
   id <- freshName
   let ty = AST.IntegerType AST.Signless 8
   return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral $ ord c))], (ty, True, Nothing))
-transChar c loc = error "unsupported chars"
+transChar pos c loc = errMsg pos "unsupported chars"
 
 -- | Translate float literal
 transFloat :: CFloat -> AST.Location -> EnvM ([BindingOrName], SType)
