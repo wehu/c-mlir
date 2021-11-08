@@ -56,9 +56,9 @@ module  {
     %c1_4 = arith.constant 1 : index
     %5 = memref.alloca(%c1_4) : memref<?xi32>
     %c1_5 = arith.constant 1 : index
-    %6 = memref.alloca(%c1_5) : memref<?xi64>
+    %6 = memref.alloca(%c1_5) : memref<?xi32>
     %c1_6 = arith.constant 1 : index
-    %7 = memref.alloca(%c1_6) : memref<?xi64>
+    %7 = memref.alloca(%c1_6) : memref<?xi32>
     %c1_7 = arith.constant 1 : index
     %8 = memref.alloca(%c1_7) : memref<?xf32>
     %c1_8 = arith.constant 1 : index
@@ -136,21 +136,21 @@ module  {
     %1 = memref.alloca(%c1_0) : memref<?xi32>
     %c0_1 = arith.constant 0 : index
     affine.store %c1_i32, %1[%c0_1] : memref<?xi32>
-    %c1_i64 = arith.constant 1 : i64
-    %c1_2 = arith.constant 1 : index
-    %2 = memref.alloca(%c1_2) : memref<?xi64>
-    %c0_3 = arith.constant 0 : index
-    affine.store %c1_i64, %2[%c0_3] : memref<?xi64>
+    %c1_i32_2 = arith.constant 1 : i32
+    %c1_3 = arith.constant 1 : index
+    %2 = memref.alloca(%c1_3) : memref<?xi32>
+    %c0_4 = arith.constant 0 : index
+    affine.store %c1_i32_2, %2[%c0_4] : memref<?xi32>
     %cst = arith.constant 1.000000e-01 : f32
-    %c1_4 = arith.constant 1 : index
-    %3 = memref.alloca(%c1_4) : memref<?xf32>
-    %c0_5 = arith.constant 0 : index
-    affine.store %cst, %3[%c0_5] : memref<?xf32>
-    %cst_6 = arith.constant 1.000000e-01 : f64
-    %c1_7 = arith.constant 1 : index
-    %4 = memref.alloca(%c1_7) : memref<?xf64>
-    %c0_8 = arith.constant 0 : index
-    affine.store %cst_6, %4[%c0_8] : memref<?xf64>
+    %c1_5 = arith.constant 1 : index
+    %3 = memref.alloca(%c1_5) : memref<?xf32>
+    %c0_6 = arith.constant 0 : index
+    affine.store %cst, %3[%c0_6] : memref<?xf32>
+    %cst_7 = arith.constant 1.000000e-01 : f64
+    %c1_8 = arith.constant 1 : index
+    %4 = memref.alloca(%c1_8) : memref<?xf64>
+    %c0_9 = arith.constant 0 : index
+    affine.store %cst_7, %4[%c0_9] : memref<?xf64>
     return
   }
 }
@@ -925,7 +925,7 @@ module  {
     %c1_1 = arith.constant 1 : index
     %2 = memref.alloca(%c1_1) : memref<?xi32>
     %c1_2 = arith.constant 1 : index
-    %3 = memref.alloca(%c1_2) : memref<?xi64>
+    %3 = memref.alloca(%c1_2) : memref<?xi32>
     %c1_3 = arith.constant 1 : index
     %4 = memref.alloca(%c1_3) : memref<?xf32>
     %c1_4 = arith.constant 1 : index
@@ -939,8 +939,8 @@ module  {
     %9 = affine.load %2[%c0_6] : memref<?xi32>
     %10 = arith.trunci %9 : i32 to i8
     %c0_7 = arith.constant 0 : index
-    %11 = affine.load %3[%c0_7] : memref<?xi64>
-    %12 = arith.trunci %11 : i64 to i8
+    %11 = affine.load %3[%c0_7] : memref<?xi32>
+    %12 = arith.trunci %11 : i32 to i8
     %c0_8 = arith.constant 0 : index
     %13 = affine.load %4[%c0_8] : memref<?xf32>
     %14 = arith.fptosi %13 : f32 to i32
@@ -958,8 +958,8 @@ module  {
     %22 = affine.load %2[%c0_12] : memref<?xi32>
     %23 = arith.trunci %22 : i32 to i16
     %c0_13 = arith.constant 0 : index
-    %24 = affine.load %3[%c0_13] : memref<?xi64>
-    %25 = arith.trunci %24 : i64 to i16
+    %24 = affine.load %3[%c0_13] : memref<?xi32>
+    %25 = arith.trunci %24 : i32 to i16
     %c0_14 = arith.constant 0 : index
     %26 = affine.load %4[%c0_14] : memref<?xf32>
     %27 = arith.fptosi %26 : f32 to i32
@@ -977,33 +977,31 @@ module  {
     %c0_18 = arith.constant 0 : index
     %36 = affine.load %2[%c0_18] : memref<?xi32>
     %c0_19 = arith.constant 0 : index
-    %37 = affine.load %3[%c0_19] : memref<?xi64>
-    %38 = arith.trunci %37 : i64 to i32
+    %37 = affine.load %3[%c0_19] : memref<?xi32>
     %c0_20 = arith.constant 0 : index
-    %39 = affine.load %4[%c0_20] : memref<?xf32>
-    %40 = arith.fptosi %39 : f32 to i32
+    %38 = affine.load %4[%c0_20] : memref<?xf32>
+    %39 = arith.fptosi %38 : f32 to i32
     %c0_21 = arith.constant 0 : index
-    %41 = affine.load %5[%c0_21] : memref<?xf64>
-    %42 = arith.fptosi %41 : f64 to i64
-    %43 = arith.trunci %42 : i64 to i32
+    %40 = affine.load %5[%c0_21] : memref<?xf64>
+    %41 = arith.fptosi %40 : f64 to i64
+    %42 = arith.trunci %41 : i64 to i32
     %c0_22 = arith.constant 0 : index
-    %44 = affine.load %0[%c0_22] : memref<?xi8>
-    %45 = arith.extsi %44 : i8 to i64
+    %43 = affine.load %0[%c0_22] : memref<?xi8>
+    %44 = arith.extsi %43 : i8 to i32
     %c0_23 = arith.constant 0 : index
-    %46 = affine.load %1[%c0_23] : memref<?xi16>
-    %47 = arith.extsi %46 : i16 to i64
+    %45 = affine.load %1[%c0_23] : memref<?xi16>
+    %46 = arith.extsi %45 : i16 to i32
     %c0_24 = arith.constant 0 : index
-    %48 = affine.load %2[%c0_24] : memref<?xi32>
-    %49 = arith.extsi %48 : i32 to i64
+    %47 = affine.load %2[%c0_24] : memref<?xi32>
     %c0_25 = arith.constant 0 : index
-    %50 = affine.load %3[%c0_25] : memref<?xi64>
+    %48 = affine.load %3[%c0_25] : memref<?xi32>
     %c0_26 = arith.constant 0 : index
-    %51 = affine.load %4[%c0_26] : memref<?xf32>
-    %52 = arith.fptosi %51 : f32 to i32
-    %53 = arith.extsi %52 : i32 to i64
+    %49 = affine.load %4[%c0_26] : memref<?xf32>
+    %50 = arith.fptosi %49 : f32 to i32
     %c0_27 = arith.constant 0 : index
-    %54 = affine.load %5[%c0_27] : memref<?xf64>
-    %55 = arith.fptosi %54 : f64 to i64
+    %51 = affine.load %5[%c0_27] : memref<?xf64>
+    %52 = arith.fptosi %51 : f64 to i64
+    %53 = arith.trunci %52 : i64 to i32
     return
   }
 }
@@ -1041,7 +1039,7 @@ module  {
     %c1_1 = arith.constant 1 : index
     %2 = memref.alloca(%c1_1) : memref<?xi32>
     %c1_2 = arith.constant 1 : index
-    %3 = memref.alloca(%c1_2) : memref<?xi64>
+    %3 = memref.alloca(%c1_2) : memref<?xi32>
     %c1_3 = arith.constant 1 : index
     %4 = memref.alloca(%c1_3) : memref<?xf32>
     %c1_4 = arith.constant 1 : index
@@ -1058,28 +1056,28 @@ module  {
     %12 = affine.load %2[%c0_6] : memref<?xi32>
     %13 = arith.sitofp %12 : i32 to f32
     %c0_7 = arith.constant 0 : index
-    %14 = affine.load %3[%c0_7] : memref<?xi64>
-    %15 = arith.trunci %14 : i64 to i32
-    %16 = arith.sitofp %15 : i32 to f32
+    %14 = affine.load %3[%c0_7] : memref<?xi32>
+    %15 = arith.sitofp %14 : i32 to f32
     %c0_8 = arith.constant 0 : index
-    %17 = affine.load %4[%c0_8] : memref<?xf32>
+    %16 = affine.load %4[%c0_8] : memref<?xf32>
     %c0_9 = arith.constant 0 : index
-    %18 = affine.load %5[%c0_9] : memref<?xf64>
-    %19 = arith.truncf %18 : f64 to f32
+    %17 = affine.load %5[%c0_9] : memref<?xf64>
+    %18 = arith.truncf %17 : f64 to f32
     %c0_10 = arith.constant 0 : index
-    %20 = affine.load %0[%c0_10] : memref<?xi8>
-    %21 = arith.extsi %20 : i8 to i64
-    %22 = arith.sitofp %21 : i64 to f64
+    %19 = affine.load %0[%c0_10] : memref<?xi8>
+    %20 = arith.extsi %19 : i8 to i64
+    %21 = arith.sitofp %20 : i64 to f64
     %c0_11 = arith.constant 0 : index
-    %23 = affine.load %1[%c0_11] : memref<?xi16>
-    %24 = arith.extsi %23 : i16 to i64
-    %25 = arith.sitofp %24 : i64 to f64
+    %22 = affine.load %1[%c0_11] : memref<?xi16>
+    %23 = arith.extsi %22 : i16 to i64
+    %24 = arith.sitofp %23 : i64 to f64
     %c0_12 = arith.constant 0 : index
-    %26 = affine.load %2[%c0_12] : memref<?xi32>
-    %27 = arith.extsi %26 : i32 to i64
-    %28 = arith.sitofp %27 : i64 to f64
+    %25 = affine.load %2[%c0_12] : memref<?xi32>
+    %26 = arith.extsi %25 : i32 to i64
+    %27 = arith.sitofp %26 : i64 to f64
     %c0_13 = arith.constant 0 : index
-    %29 = affine.load %3[%c0_13] : memref<?xi64>
+    %28 = affine.load %3[%c0_13] : memref<?xi32>
+    %29 = arith.extsi %28 : i32 to i64
     %30 = arith.sitofp %29 : i64 to f64
     %c0_14 = arith.constant 0 : index
     %31 = affine.load %4[%c0_14] : memref<?xf32>
@@ -2072,21 +2070,21 @@ module  {
     %c1_22 = arith.constant 1 : index
     %23 = memref.alloca(%c1_22) : memref<?xvector<16xi32>>
     %c1_23 = arith.constant 1 : index
-    %24 = memref.alloca(%c1_23) : memref<?xvector<2xi64>>
+    %24 = memref.alloca(%c1_23) : memref<?xvector<2xi32>>
     %c1_24 = arith.constant 1 : index
-    %25 = memref.alloca(%c1_24) : memref<?xvector<4xi64>>
+    %25 = memref.alloca(%c1_24) : memref<?xvector<4xi32>>
     %c1_25 = arith.constant 1 : index
-    %26 = memref.alloca(%c1_25) : memref<?xvector<8xi64>>
+    %26 = memref.alloca(%c1_25) : memref<?xvector<8xi32>>
     %c1_26 = arith.constant 1 : index
-    %27 = memref.alloca(%c1_26) : memref<?xvector<16xi64>>
+    %27 = memref.alloca(%c1_26) : memref<?xvector<16xi32>>
     %c1_27 = arith.constant 1 : index
-    %28 = memref.alloca(%c1_27) : memref<?xvector<2xi64>>
+    %28 = memref.alloca(%c1_27) : memref<?xvector<2xi32>>
     %c1_28 = arith.constant 1 : index
-    %29 = memref.alloca(%c1_28) : memref<?xvector<4xi64>>
+    %29 = memref.alloca(%c1_28) : memref<?xvector<4xi32>>
     %c1_29 = arith.constant 1 : index
-    %30 = memref.alloca(%c1_29) : memref<?xvector<8xi64>>
+    %30 = memref.alloca(%c1_29) : memref<?xvector<8xi32>>
     %c1_30 = arith.constant 1 : index
-    %31 = memref.alloca(%c1_30) : memref<?xvector<16xi64>>
+    %31 = memref.alloca(%c1_30) : memref<?xvector<16xi32>>
     %c1_31 = arith.constant 1 : index
     %32 = memref.alloca(%c1_31) : memref<?xvector<2xf32>>
     %c1_32 = arith.constant 1 : index
@@ -2116,9 +2114,9 @@ module  {
     %c1_44 = arith.constant 1 : index
     %45 = memref.alloca(%c1_44) : memref<?xvector<3xi32>>
     %c1_45 = arith.constant 1 : index
-    %46 = memref.alloca(%c1_45) : memref<?xvector<3xi64>>
+    %46 = memref.alloca(%c1_45) : memref<?xvector<3xi32>>
     %c1_46 = arith.constant 1 : index
-    %47 = memref.alloca(%c1_46) : memref<?xvector<3xi64>>
+    %47 = memref.alloca(%c1_46) : memref<?xvector<3xi32>>
     %c1_47 = arith.constant 1 : index
     %48 = memref.alloca(%c1_47) : memref<?xvector<3xf32>>
     %c1_48 = arith.constant 1 : index

@@ -630,7 +630,7 @@ transExpr a@(CAssign op lhs rhs node) = do
     id1 <- freshName
     st <- if isAssignable
           then ([Left $ id0 AST.:= constIndex0 (getPos node)
-                ,Left $ id1 AST.:= Affine.load (getPos node) (ty^._1) id [id0]] ++) <$> 
+                ,Left $ id1 AST.:= Affine.load (getPos node) (ty^._1) id [id0]] ++) <$>
                    tryStore (getPos node) rhsId id1 indices member
           else tryStore (getPos node) rhsId id indices member
     return (srcBs ++ rhsBs ++ st, (dstTy, sign, tn))
@@ -1096,22 +1096,22 @@ transExpr m@(CMember e ident _ node) = do
       elem = id1 AST.:= Affine.load loc resTy (lastId (posOf node) eBs) [id0]
   return (eBs ++ [Left cIndex, Left elem, Right id1], (resTy, resSign, resTn))
 transExpr (CSizeofType decl node) = do
-  md <- machine <$> getUserState 
+  md <- machine <$> getUserState
   t <- analyseTypeDecl decl
   s <- sizeofType md node t
   transExpr (CConst (CIntConst (cInteger s) node))
 transExpr (CSizeofExpr e node) = do
-  md <- machine <$> getUserState 
+  md <- machine <$> getUserState
   t <- tExpr [] RValue e
   s <- sizeofType md node t
   transExpr (CConst (CIntConst (cInteger s) node))
 transExpr (CAlignofType decl node) = do
-  md <- machine <$> getUserState 
+  md <- machine <$> getUserState
   t <- analyseTypeDecl decl
   s <- alignofType md node t
   transExpr (CConst (CIntConst (cInteger s) node))
 transExpr (CAlignofExpr e node) = do
-  md <- machine <$> getUserState 
+  md <- machine <$> getUserState
   t <- tExpr [] RValue e
   s <- alignofType md node t
   transExpr (CConst (CIntConst (cInteger s) node))
@@ -1186,9 +1186,10 @@ transConst (CStrConst s node) = transStr s (getPos node)
 transInt :: CInteger -> AST.Location -> EnvM ([BindingOrName], SType)
 transInt (CInteger i _ flag) loc = do
   id <- freshName
-  let bits | testFlag FlagUnsigned flag = 32
-           | testFlag FlagLong flag = 64
-           | testFlag FlagLongLong flag = 64
+  md <- machine <$> getUserState 
+  let bits | testFlag FlagUnsigned flag = 8 * fromIntegral (iSize md TyUInt)
+           | testFlag FlagLong flag = 8 * fromIntegral (iSize md TyLong)
+           | testFlag FlagLongLong flag = 8 * fromIntegral (iSize md TyLLong)
            | testFlag FlagImag flag = 32
            | otherwise = 32
       sign | testFlag FlagUnsigned flag = False
@@ -1282,23 +1283,24 @@ type_ pos ms (FunctionType ty attrs) = f ty
           rt <- type_ pos ms resType
           return (AST.FunctionType ps [t | t <- rs, t /= AST.NoneType], rt ^. _2, rt ^._3)
         f (FunTypeIncomplete ty) = type_ pos ms ty
-type_ pos ms ty@(DirectType name quals attrs) =
+type_ pos ms ty@(DirectType name quals attrs) = do
+  md <- machine <$> getUserState
   case name of
     TyVoid                       -> return (AST.NoneType, False, Nothing)
     TyIntegral (id -> TyBool)    -> return (AST.IntegerType AST.Signless 1, False, Nothing)
-    TyIntegral (id -> TyChar)    -> return (AST.IntegerType AST.Signless 8, True, Nothing)
-    TyIntegral (id -> TySChar)   -> return (AST.IntegerType AST.Signless 8, True, Nothing)
-    TyIntegral (id -> TyUChar)   -> return (AST.IntegerType AST.Signless 8, False, Nothing)
-    TyIntegral (id -> TyShort)   -> return (AST.IntegerType AST.Signless 16, True, Nothing)
-    TyIntegral (id -> TyUShort)  -> return (AST.IntegerType AST.Signless 16, False, Nothing)
-    TyIntegral (id -> TyInt)     -> return (AST.IntegerType AST.Signless 32, True, Nothing)
-    TyIntegral (id -> TyUInt)    -> return (AST.IntegerType AST.Signless 32, False, Nothing)
-    TyIntegral (id -> TyInt128)  -> return (AST.IntegerType AST.Signless 128, True, Nothing)
-    TyIntegral (id -> TyUInt128) -> return (AST.IntegerType AST.Signless 128, False, Nothing)
-    TyIntegral (id -> TyLong)    -> return (AST.IntegerType AST.Signless 64, True, Nothing)
-    TyIntegral (id -> TyULong)   -> return (AST.IntegerType AST.Signless 64, False, Nothing)
-    TyIntegral (id -> TyLLong)   -> return (AST.IntegerType AST.Signless 64, True, Nothing)
-    TyIntegral (id -> TyULLong)  -> return (AST.IntegerType AST.Signless 64, False, Nothing)
+    TyIntegral (id -> TyChar)    -> return (AST.IntegerType AST.Signless (8 * fromIntegral (iSize md TyChar)), True, Nothing)
+    TyIntegral (id -> TySChar)   -> return (AST.IntegerType AST.Signless (8 * fromIntegral (iSize md TySChar)), True, Nothing)
+    TyIntegral (id -> TyUChar)   -> return (AST.IntegerType AST.Signless (8 * fromIntegral (iSize md TyUChar)), False, Nothing)
+    TyIntegral (id -> TyShort)   -> return (AST.IntegerType AST.Signless (8 * fromIntegral (iSize md TyShort)), True, Nothing)
+    TyIntegral (id -> TyUShort)  -> return (AST.IntegerType AST.Signless (8 * fromIntegral (iSize md TyUShort)), False, Nothing)
+    TyIntegral (id -> TyInt)     -> return (AST.IntegerType AST.Signless (8 * fromIntegral (iSize md TyInt)), True, Nothing)
+    TyIntegral (id -> TyUInt)    -> return (AST.IntegerType AST.Signless (8 * fromIntegral (iSize md TyUInt)), False, Nothing)
+    TyIntegral (id -> TyInt128)  -> return (AST.IntegerType AST.Signless (8 * fromIntegral (iSize md TyInt128)), True, Nothing)
+    TyIntegral (id -> TyUInt128) -> return (AST.IntegerType AST.Signless (8 * fromIntegral (iSize md TyUInt128)), False, Nothing)
+    TyIntegral (id -> TyLong)    -> return (AST.IntegerType AST.Signless (8 * fromIntegral (iSize md TyLong)), True, Nothing)
+    TyIntegral (id -> TyULong)   -> return (AST.IntegerType AST.Signless (8 * fromIntegral (iSize md TyULong)), False, Nothing)
+    TyIntegral (id -> TyLLong)   -> return (AST.IntegerType AST.Signless (8 * fromIntegral (iSize md TyLLong)), True, Nothing)
+    TyIntegral (id -> TyULLong)  -> return (AST.IntegerType AST.Signless (8 * fromIntegral (iSize md TyULLong)), False, Nothing)
     TyFloating (id -> TyFloat)   -> return (AST.Float32Type, True, Nothing)
     TyFloating (id -> TyDouble)  -> return (AST.Float64Type, True, Nothing)
     TyFloating (id -> TyLDouble) -> return (AST.Float64Type, True, Nothing)
