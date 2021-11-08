@@ -593,10 +593,10 @@ transExpr a@(CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
   (id, ty, srcBs, isAssignable, member) <- case src of
                        CVar ident _ -> (\(a, b, c) -> (a, b, [], c, Nothing)) <$> lookupVar (identName ident)
-                       CMember (CVar ident _) member _ _ -> do
-                         (a, (_, _, tn), c) <- lookupVar (identName ident)
+                       CMember s member _ _ -> do
+                         (a, (_, b, tn)) <- transExpr s -- lookupVar (identName ident)
                          (index, ty) <- calcStructFieldIndex (posOf node) tn member
-                         return (a, ty, [], c, Just index)
+                         return (lastId a, ty, a, b, Just index)
                        (CUnary CIndOp e node) | null indices -> (\(a, b) -> (lastId a, b, a, False, Nothing)) <$> transExpr e
                        _ -> (\(a, b) -> (lastId a, b, a, False, Nothing)) <$> transExpr src
   (rhsBs, rhsTy) <- transExpr (case op of
@@ -626,11 +626,16 @@ transExpr a@(CAssign op lhs rhs node) = do
     id1 <- freshName
     st <- if isAssignable
           then ([Left $ id0 AST.:= constIndex0 (getPos node)
-                ,Left $ id1 AST.:= Affine.load (getPos node) (ty^._1) id [id0]] ++) <$> tryStore (getPos node) rhsId id1 indices
-          else tryStore (getPos node) rhsId id indices
+                ,Left $ id1 AST.:= Affine.load (getPos node) (ty^._1) id [id0]] ++) <$> 
+                   tryStore (getPos node) rhsId id1 indices member
+          else tryStore (getPos node) rhsId id indices member
     return (srcBs ++ rhsBs ++ st, (dstTy, sign, tn))
-  where tryStore loc vId dstId indices = do
-          indexBs <- mapM transExpr indices
+  where tryStore loc vId dstId indices member = do
+          let fIndex:res = indices
+          indexBs <- mapM transExpr ((if isn't _Nothing member then
+                                     CBinary CAddOp (CConst (CIntConst (cInteger $ fromIntegral (fromJust member)) node))
+                                                    fIndex node
+                                     else fIndex): res)
           let indexIds = map lastId (indexBs ^.. traverse . _1)
           toIndices <- mapM (uncurry (toIndex (getPos node))) [(i, t)|i<-indexIds|t<-indexBs^..traverse._2._1]
           ds <- affineDimensions <$> getUserState
@@ -1092,7 +1097,7 @@ calcStructFieldIndex :: Position -> Maybe SUERef -> Ident -> EnvM (Int, SType)
 calcStructFieldIndex pos ref field = do
   let fn = identName field
   when (isn't _Just ref) $ error $ "unknown struct " ++ show pos
-  tdef <- M.lookup (fromJust ref) . compTypeDefs <$> getUserState 
+  tdef <- M.lookup (fromJust ref) . compTypeDefs <$> getUserState
   when (isn't _Just tdef) $ error $ "cannot find struct " ++ show ref ++ show pos
   let (CompType _ StructTag members attrs node) = fromJust tdef
   res <- (^._1) <$> foldM (\(s, i) m -> case m of
@@ -1100,7 +1105,7 @@ calcStructFieldIndex pos ref field = do
                      (n, t) <- varDecl pos decl
                      if n == fn then return ([(i, t)], i+1)
                      else return (s, i+1)
-                   m -> unsupported pos m) ([], 0::Int) members 
+                   m -> unsupported pos m) ([], 0::Int) members
   when (null res) $ error $ "cannot find field " ++ show field ++ " of struct " ++ show ref ++ show pos
   return $ head res
 
@@ -1277,7 +1282,7 @@ type_ pos ms ty@(DirectType name quals attrs) =
     TyComplex t -> do (ct, sign, tn) <- type_ pos ms (DirectType (TyFloating t) quals attrs)
                       return (AST.ComplexType ct, sign, tn)
     TyComp (CompTypeRef ref _ _) -> do
-      tdef <- M.lookup ref . compTypeDefs <$> getUserState 
+      tdef <- M.lookup ref . compTypeDefs <$> getUserState
       case tdef of
         Just tdef -> structType ms tdef
         Nothing -> error $ "cannot find comp type " ++ show ref ++ show pos
