@@ -142,6 +142,9 @@ freshName = do
 unsupported :: (Pretty a) => Position -> a -> b
 unsupported pos a = error $ "unsupported:\n" ++ show (pretty a) ++ "@" ++ show pos
 
+errMsg :: Position -> String -> b
+errMsg pos s = error $ "error:\n" ++ s ++ "@" ++ show pos
+
 --------------------------------------------------------------------------
 -- AST translators
 
@@ -375,8 +378,8 @@ transBlockItem (CBlockDecl (CDecl q ds node)) = do
         objDef <- M.lookup (posOf decl) . objDefs <$> getUserState
         case objDef of
           Just objDef -> transLocalDecl objDef
-          Nothing -> error $ "cannot find " ++ show (posOf decl)
-      _ -> error $ "unsupported " ++ show (posOf node)) ds
+          Nothing -> errMsg (posOf decl) $ "cannot find " ++ show decl
+      _ -> errMsg (posOf node) $ "unsupported " ++ show d) ds
 transBlockItem s = unsupported (posOf s) s
 
 -- | Translate a local variable declaration
@@ -384,7 +387,7 @@ transLocalDecl :: ObjDef -> EnvM [BindingOrName]
 transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
   let storage = declStorage var
   case storage of
-    Static{} -> error $ "static is not supported" ++ show (posOf node)
+    Static{} -> errMsg (posOf node) "static is not supported"
     _ -> return ()
   id <- freshName
   id0 <- freshName
@@ -909,7 +912,7 @@ transExpr c@(CCall (CVar ident _) [src', dst] node) | identName ident == "vload"
   (dstBs, (dstTy, dstSign, dstTn)) <- transExpr dst
   let ty = case dstTy of
              AST.MemRefType [Nothing] t _ _ -> t
-             _ -> error $ "vload expected a pointer to vector type" ++ show (posOf node)
+             _ -> errMsg (posOf node) "vload expected a pointer to vector type"
   id <- freshName
   id0 <- freshName
   let load = id AST.:= Vector.vload loc ty (lastId srcBs) (toIndex ^..traverse._2)
@@ -939,12 +942,12 @@ transExpr c@(CCall (CVar ident _) args node) = do
       let malloc = id AST.:= MemRef.alloc loc resTy [toId] []
       return (join (argsBs ^..traverse._1) ++ [toB] ++ [Left malloc, Right id], (resTy, sizeSign, sizeTn))
     "free" -> do
-      when (L.length argsBs /= 1) $ error $ "free expected 1 arguments" ++ show (posOf node)
+      when (L.length argsBs /= 1) $ errMsg (posOf node) "free expected 1 arguments"
       let (mB, (mTy, mSign, mTn)) = head argsBs
           free = AST.Do $ MemRef.dealloc loc (lastId mB)
       return (join (argsBs ^..traverse._1) ++ [Left free], (mTy, mSign, mTn))
     "memcpy" -> do
-      when (L.length argsBs /= 2) $ error $ "memcpy expected 2 arguments" ++ show (posOf node)
+      when (L.length argsBs /= 2) $ errMsg (posOf node) "memcpy expected 2 arguments"
       let (dstB, (dstTy, dstSign, dstTn)) = head argsBs
           (srcB, (srcTy, srcSign, srcTn)) = argsBs !! 1
           copy = AST.Do $ MemRef.copy loc (lastId srcB) (lastId dstB)
@@ -978,25 +981,25 @@ transExpr c@(CCall (CVar ident _) args node) = do
       (_, (ty, sign, tn), _) <- lookupVar name
       let resTy = case ty of
                     AST.FunctionType _ resTy -> resTy
-                    _ -> error "expected a function type"
+                    _ -> errMsg (posOf node) "expected a function type"
       let call = id AST.:= Std.call loc resTy (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
       return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (if null resTy then AST.NoneType else head resTy, sign, tn))
   where getAttributes name args =
           map (\v -> case intValue v of
                                Just v -> fromIntegral v
-                               Nothing -> error $ name ++ " expected int constant " ++ show (posOf node)) args
+                               Nothing -> errMsg (posOf node) $ name ++ " expected int constant " ++ show v) args
         builtinFunc name loc id op argsBs n = do
-          when (L.length argsBs /= n) $ error $ name ++ " expected " ++ show n ++ " arguments" ++ show (posOf node)
+          when (L.length argsBs /= n) $ errMsg (posOf node) $ name ++ " expected " ++ show n ++ " arguments"
           let (aB, (aTy, aSign, aTn)) = head argsBs
               ast = id AST.:= op loc aTy (map lastId $ argsBs ^..traverse._1)
           return (join (argsBs ^..traverse._1) ++ [Left ast, Right id], (aTy, aSign, aTn))
         convLikeFunc name loc op argsBs attrs n = do
-          when (L.length attrs /= n) $ error $ name ++ " expected " ++ show n ++ " attributes" ++ show (posOf node)
-          when (L.length argsBs /= 3) $ error $ name ++ " expected 3 arguments" ++ show (posOf node)
+          when (L.length attrs /= n) $ errMsg (posOf node) $ name ++ " expected " ++ show n ++ " attributes"
+          when (L.length argsBs /= 3) $ errMsg (posOf node) $ name ++ " expected 3 arguments"
           unless (all (\case
                        AST.MemRefType{} -> True
                        _ -> False) (argsBs ^..traverse._2._1)) $
-                error $ name ++ " expected array as arguments" ++ show (posOf node)
+                errMsg (posOf node) $ name ++ " expected array as arguments"
           id0 <- freshName
           id1 <- freshName
           id2 <- freshName
@@ -1080,7 +1083,7 @@ transExpr (CUnary CIndOp e node) = do
 transExpr adr@(CUnary CAdrOp (CVar ident _) node) = do
   let name = identName ident
   (id, (ty, sign, tn), isAssignable)  <- lookupVar name
-  unless isAssignable $ error $ "& only support lvalue" ++ show (posOf node)
+  unless isAssignable $ errMsg (posOf node) "& only support lvalue"
   return ([Right id], (AST.MemRefType [Nothing] ty Nothing Nothing, sign, tn))
 transExpr m@(CMember e ident _ node) = do
   (eBs, (eTy, eSign, eTn)) <- transExpr e
@@ -1096,9 +1099,9 @@ transExpr e = unsupported (posOf e) e
 calcStructFieldIndex :: Position -> Maybe SUERef -> Ident -> EnvM (Int, SType)
 calcStructFieldIndex pos ref field = do
   let fn = identName field
-  when (isn't _Just ref) $ error $ "unknown struct " ++ show pos
+  when (isn't _Just ref) $ errMsg pos "unknown struct "
   tdef <- M.lookup (fromJust ref) . compTypeDefs <$> getUserState
-  when (isn't _Just tdef) $ error $ "cannot find struct " ++ show ref ++ show pos
+  when (isn't _Just tdef) $ errMsg pos $ "cannot find struct " ++ show ref
   let (CompType _ StructTag members attrs node) = fromJust tdef
   res <- (^._1) <$> foldM (\(s, i) m -> case m of
                    MemberDecl decl e node -> do
@@ -1106,7 +1109,7 @@ calcStructFieldIndex pos ref field = do
                      if n == fn then return ([(i, t)], i+1)
                      else return (s, i+1)
                    m -> unsupported pos m) ([], 0::Int) members
-  when (null res) $ error $ "cannot find field " ++ show field ++ " of struct " ++ show ref ++ show pos
+  when (null res) $ errMsg pos $ "cannot find field " ++ show field ++ " of struct " ++ show ref
   return $ head res
 
 data DimensionOrSymbolOrConst =
@@ -1285,7 +1288,7 @@ type_ pos ms ty@(DirectType name quals attrs) =
       tdef <- M.lookup ref . compTypeDefs <$> getUserState
       case tdef of
         Just tdef -> structType ms tdef
-        Nothing -> error $ "cannot find comp type " ++ show ref ++ show pos
+        Nothing -> errMsg pos $ "cannot find comp type " ++ show ref
     TyEnum ref -> return (AST.IntegerType AST.Signless 32, True, Nothing)
     TyBuiltin _ -> unsupported pos ty
     _ -> unsupported pos ty
@@ -1322,7 +1325,7 @@ structType ms t@(CompType ref StructTag members attrs node) = do
                         _ -> return d
                     t -> unsupported (posOf t) t) members
   when (L.length (L.foldl' (\s t -> if null s then [t] else if head s ^._2._1 /= t ^._2._1 then t:s else s) [] mTypes) /= 1) $
-    error $ "currently struct only supports all fields with same type" ++ show (posOf node)
+    errMsg (posOf node) "currently struct only supports all fields with same type"
   return (AST.MemRefType [Just $ L.length mTypes] (head mTypes ^._2._1) Nothing Nothing, False, Just ref)
 structType _ t = unsupported (posOf t) t
 
