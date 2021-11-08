@@ -9,18 +9,19 @@ module CMLIR.Translator where
 
 import qualified MLIR.AST.Builder as AST
 import qualified MLIR.AST as AST
+import qualified MLIR.AST.Serialize as AST
 import qualified MLIR.Native.Pass as MLIR
 import qualified MLIR.Native.ExecutionEngine as MLIR
-import MLIR.AST.Serialize
+import qualified MLIR.Native as MLIR
+
 import qualified Data.ByteString.UTF8 as BU
 import qualified MLIR.AST.Dialect.Arith as Arith
-import qualified CMLIR.Dialect.Arith as Arith
 import qualified MLIR.AST.Dialect.Std as Std
-import qualified CMLIR.Dialect.Std as Std
-import qualified MLIR.Native as MLIR
-import qualified MLIR.AST.Dialect.MemRef as MemRef
-import qualified CMLIR.Dialect.MemRef as MemRef
 import qualified MLIR.AST.Dialect.Affine as Affine
+import qualified MLIR.AST.Dialect.MemRef as MemRef
+import qualified CMLIR.Dialect.Std as Std
+import qualified CMLIR.Dialect.MemRef as MemRef
+import qualified CMLIR.Dialect.Arith as Arith
 import qualified CMLIR.Dialect.Affine as Affine
 import qualified CMLIR.Dialect.SCF as SCF
 import qualified CMLIR.Dialect.Vector as Vector
@@ -211,7 +212,7 @@ translateToMLIR opts tu =
                    in case res of
                        Left errs -> error $ show errs
                        Right (res, _) -> res
-     nativeOp <- fromAST ctx (mempty, mempty) ast
+     nativeOp <- AST.fromAST ctx (mempty, mempty) ast
      check <- do
                 -- run passes to llvm ir
                 Just m <- MLIR.moduleFromOperation nativeOp
@@ -749,12 +750,12 @@ transExpr c@(CCast t e node) = do
             return [Left $ dstId AST.:= (if srcSign then Arith.FPToSI else Arith.FPToUI) loc (AST.IntegerType AST.Signless (bits srcTy)) srcId]
           | isFloat srcTy && isInt dstTy =
             return [Left $ id AST.:= (if srcSign then Arith.FPToSI else Arith.FPToUI) loc (AST.IntegerType AST.Signless (bits srcTy)) srcId
-            ,Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc dstTy id]
+                   ,Left $ dstId AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc dstTy id]
           | isInt srcTy && isFloat dstTy && bits srcTy == bits dstTy =
             return [Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc (floatTy $ bits srcTy) srcId]
           | isInt srcTy && isFloat dstTy =
             return [Left $ id AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc (AST.IntegerType AST.Signless (bits dstTy)) srcId
-            ,Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc dstTy id]
+                   ,Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc dstTy id]
           | isI8Memref srcTy && isMemref dstTy = do
             let ds = AST.memrefTypeShape dstTy
             sizes <- foldM (\(s, index) d ->
