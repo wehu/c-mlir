@@ -940,8 +940,9 @@ transExpr c@(CCall (CVar ident _) args node) = do
           (srcB, (srcTy, srcSign)) = argsBs !! 1
           copy = AST.Do $ MemRef.copy loc (lastId srcB) (lastId dstB)
       return (join (argsBs ^..traverse._1) ++ [Left copy], (dstTy, dstSign))
-    "conv_1d" -> convLikeFunc loc Linalg.conv1d argsBs
-    "conv_2d" -> convLikeFunc loc Linalg.conv2d argsBs
+    "conv_1d_nwc_wcf" -> convLikeFunc loc Linalg.conv1dNwcWcf (take 3 argsBs) $ getAttributes (drop 3 args)
+    "conv_1d" -> convLikeFunc loc Linalg.conv1d argsBs []
+    "conv_2d" -> convLikeFunc loc Linalg.conv2d argsBs []
     "abs"   -> builtinFunc loc id Math.abs argsBs 1
     "atan2" -> builtinFunc loc id Math.atan2 argsBs 2
     "atan"  -> builtinFunc loc id Math.atan argsBs 1
@@ -969,12 +970,16 @@ transExpr c@(CCall (CVar ident _) args node) = do
                     _ -> error "expected a function type"
       let call = id AST.:= Std.call loc resTy (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
       return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (if null resTy then AST.NoneType else head resTy, sign))
-  where builtinFunc loc id op argsBs n = do
+  where getAttributes args =
+          map (\v -> case intValue v of
+                               Just v -> fromIntegral v
+                               Nothing -> error $ "expected int constant " ++ show (posOf node)) args
+        builtinFunc loc id op argsBs n = do
           when (L.length argsBs /= n) $ error $ "expected " ++ show n ++ " arguments" ++ show (posOf node)
           let (aB, (aTy, aSign)) = head argsBs
               ast = id AST.:= op loc aTy (map lastId $ argsBs ^..traverse._1)
           return (join (argsBs ^..traverse._1) ++ [Left ast, Right id], (aTy, aSign))
-        convLikeFunc loc op argsBs = do
+        convLikeFunc loc op argsBs attrs = do
           when (L.length argsBs /= 3) $ error $ "expected 3 arguments" ++ show (posOf node)
           unless (all (\case
                        AST.MemRefType{} -> True
@@ -997,7 +1002,7 @@ transExpr c@(CCall (CVar ident _) args node) = do
             transExpr (CBinary CAddOp (CVar (Ident outputN (read outputN) node) node)
                                (CBinary CMulOp (CVar (Ident lhsN (read lhsN) node) node)
                                                (CVar (Ident rhsN (read rhsN) node) node) node) node)
-          let ast = AST.Do $ op loc (lastId lhsB) (lastId rhsB) (lastId outputB)
+          let ast = AST.Do $ op loc (lastId lhsB) (lastId rhsB) (lastId outputB) attrs
                                  (AST.Block id0 [(id1, AST.memrefTypeElement lhsTy),
                                                  (id2, AST.memrefTypeElement rhsTy),
                                                  (id3, AST.memrefTypeElement outputTy)]

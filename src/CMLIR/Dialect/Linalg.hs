@@ -6,8 +6,31 @@ import MLIR.AST
 import MLIR.AST.Dialect.Affine
 import Data.Array.IArray
 
-conv1d :: Location -> Name -> Name -> Name -> Block -> Operation
-conv1d loc lhs rhs output block = Operation
+conv1dNwcWcf :: Location -> Name -> Name -> Name -> [Int] -> Block -> Operation
+conv1dNwcWcf loc lhs rhs output attrs block = Operation
+  { opName = "linalg.conv_1d_nwc_wcf"
+  , opLocation = loc
+  , opResultTypes = Explicit []
+  , opOperands = [lhs, rhs, output]
+  , opRegions = [Region [block]]
+  , opSuccessors = []
+  , opAttributes = namedAttribute "operand_segment_sizes"
+                       (DenseElementsAttr (VectorType [2] $ IntegerType Unsigned 32) $
+                         DenseUInt32 $ listArray (0 :: Int, 1) $ fromIntegral <$> [2, 1])
+                   <> namedAttribute "linalg.memoized_indexing_maps"
+                       (ArrayAttr [AffineMapAttr (Map 5 0 [Dimension 0, Add (Mul (Dimension 1) (Constant (head attrs))) (Mul (Dimension 3) (Constant (attrs !! 1))), Dimension 4])
+                                  ,AffineMapAttr (Map 5 0 [Dimension 3, Dimension 4, Dimension 2])
+                                  ,AffineMapAttr (Map 5 0 [Dimension 0, Dimension 1, Dimension 2])])
+                   <> namedAttribute "strides"
+                       (DenseElementsAttr (VectorType [1] $ IntegerType Signless 64) $
+                         DenseUInt64 $ listArray (0 :: Int, 0) $ fromIntegral <$> [head attrs])
+                   <> namedAttribute "dilations"
+                       (DenseElementsAttr (VectorType [1] $ IntegerType Signless 64) $
+                         DenseUInt64 $ listArray (0 :: Int, 0) $ fromIntegral <$> [attrs !! 1])
+  }
+
+conv1d :: Location -> Name -> Name -> Name -> [Int] -> Block -> Operation
+conv1d loc lhs rhs output attrs block = Operation
   { opName = "linalg.conv_1d"
   , opLocation = loc
   , opResultTypes = Explicit []
@@ -23,8 +46,8 @@ conv1d loc lhs rhs output block = Operation
                                   ,AffineMapAttr (Map 2 0 [Dimension 0])])
   }
 
-conv2d :: Location -> Name -> Name -> Name -> Block -> Operation
-conv2d loc lhs rhs output block = Operation
+conv2d :: Location -> Name -> Name -> Name -> [Int] -> Block -> Operation
+conv2d loc lhs rhs output attrs block = Operation
   { opName = "linalg.conv_2d"
   , opLocation = loc
   , opResultTypes = Explicit []

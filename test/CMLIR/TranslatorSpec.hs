@@ -2329,6 +2329,26 @@ module  {
   }
 }
       |]
+
+    it "can translate conv_1d_nwc_wcf" $ do
+      [r|
+void foo() {
+  float lhs[3][4][5];
+  float rhs[1][5][1];
+  float output[3][4][1];
+  conv_1d_nwc_wcf(lhs, rhs, output, 1, 1);
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<3x4x5xf32>
+    %1 = memref.alloca() : memref<1x5x1xf32>
+    %2 = memref.alloca() : memref<3x4x1xf32>
+    linalg.conv_1d_nwc_wcf {dilations = dense<1> : vector<1xi64>, strides = dense<1> : vector<1xi64>} ins(%0, %1 : memref<3x4x5xf32>, memref<1x5x1xf32>) outs(%2 : memref<3x4x1xf32>)
+    return
+  }
+}
+      |]
     
     it "can translate conv_1d" $ do
       [r|
