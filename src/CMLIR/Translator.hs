@@ -20,6 +20,7 @@ import qualified MLIR.AST.Dialect.Std as Std
 import qualified MLIR.AST.Dialect.Affine as Affine
 import qualified MLIR.AST.Dialect.MemRef as MemRef
 import qualified MLIR.AST.Dialect.LLVM as LLVM
+import qualified MLIR.AST.Dialect.Vector as Vector
 import qualified CMLIR.Dialect.Std as Std
 import qualified CMLIR.Dialect.MemRef as MemRef
 import qualified CMLIR.Dialect.Arith as Arith
@@ -1072,10 +1073,32 @@ transExpr adr@(CUnary CAdrOp (CVar ident _) node) = do
   (id, (ty, sign, tn), isAssignable)  <- lookupVar name
   unless isAssignable $ error $ "& only support lvalue" ++ show (posOf node)
   return ([Right id], (AST.MemRefType [Nothing] ty Nothing Nothing, sign, tn))
---transExpr m@(CMember e ident _ node) = do
---  (eBs, (eTy, eSign)) <- transExpr e
---  return (eBs , (eTy, eSign))
+transExpr m@(CMember e ident _ node) = do
+  (eBs, (eTy, eSign, eTn)) <- transExpr e
+  (index, (resTy, resSign, resTn)) <- calcStructFieldIndex (posOf node) eTn ident
+  id0 <- freshName
+  id1 <- freshName
+  let loc = getPos node
+      cIndex = id0 AST.:= constInt loc (AST.IntegerType AST.Signless 32) index
+      elem = id1 AST.:= Vector.ExtractElement loc resTy (lastId eBs) id0
+  return (eBs ++ [Left cIndex, Left elem, Right id1], (resTy, resSign, resTn))
 transExpr e = unsupported (posOf e) e
+
+calcStructFieldIndex :: Position -> Maybe SUERef -> Ident -> EnvM (Int, SType)
+calcStructFieldIndex pos ref field = do
+  let fn = identName field
+  when (isn't _Just ref) $ error $ "unknown struct " ++ show pos
+  tdef <- M.lookup (fromJust ref) . compTypeDefs <$> getUserState 
+  when (isn't _Just tdef) $ error $ "cannot find struct " ++ show ref ++ show pos
+  let (CompType _ StructTag members attrs node) = fromJust tdef
+  res <- (^._1) <$> foldM (\(s, i) m -> case m of
+                   MemberDecl decl e node -> do
+                     (n, t) <- varDecl pos decl
+                     if n == fn then return ([(i, t)], i+1)
+                     else return (s, i+1)
+                   m -> unsupported pos m) ([], 0::Int) members 
+  when (null res) $ error $ "cannot find field " ++ show field ++ " of struct " ++ show ref ++ show pos
+  return $ head res
 
 data DimensionOrSymbolOrConst =
   ADimension | ASymbol | AConst

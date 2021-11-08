@@ -2506,3 +2506,32 @@ module  {
 }
       |]
     
+    it "can translate struct" $ do
+      [r|
+typedef struct a {
+  int f;
+  int f1;
+} aa;
+
+void foo() {
+  aa a;
+  int i;
+  i = a.f1;
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %c1 = arith.constant 1 : index
+    %0 = memref.alloca(%c1) : memref<?xvector<2xi32>>
+    %c1_0 = arith.constant 1 : index
+    %1 = memref.alloca(%c1_0) : memref<?xi32>
+    %c0 = arith.constant 0 : index
+    %2 = affine.load %0[%c0] : memref<?xvector<2xi32>>
+    %c1_i32 = arith.constant 1 : i32
+    %3 = vector.extractelement %2[%c1_i32 : i32] : vector<2xi32>
+    %c0_1 = arith.constant 0 : index
+    affine.store %3, %1[%c0_1] : memref<?xi32>
+    return
+  }
+}
+      |]
