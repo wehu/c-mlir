@@ -15,11 +15,11 @@ import qualified MLIR.Native.Pass as MLIR
 import qualified MLIR.Native.ExecutionEngine as MLIR
 import qualified MLIR.Native as MLIR
 
-import qualified Data.ByteString.UTF8 as BU
 import qualified MLIR.AST.Dialect.Arith as Arith
 import qualified MLIR.AST.Dialect.Std as Std
 import qualified MLIR.AST.Dialect.Affine as Affine
 import qualified MLIR.AST.Dialect.MemRef as MemRef
+import qualified MLIR.AST.Dialect.LLVM as LLVM
 import qualified CMLIR.Dialect.Std as Std
 import qualified CMLIR.Dialect.MemRef as MemRef
 import qualified CMLIR.Dialect.Arith as Arith
@@ -44,6 +44,7 @@ import Control.Monad
 import Control.Monad.Trans.Cont
 import Control.Monad.IO.Class
 import Control.Lens
+import qualified Data.ByteString.UTF8 as BU
 import Data.Maybe
 import Data.Int
 import Data.Array.IArray
