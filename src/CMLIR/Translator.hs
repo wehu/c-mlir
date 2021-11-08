@@ -76,6 +76,7 @@ data Env = Env {decls :: [Decl],
                 affineDimensions :: M.Map String (Int, BU.ByteString),
                 affineSymbols :: M.Map String (Int, BU.ByteString),
                 isAffineScope :: Bool,
+                machine :: MachineDesc,
                 idCounter :: Int}
 
 type EnvM = TravT Env Identity
@@ -96,6 +97,7 @@ initEnv = Env{decls = [],
               affineDimensions = M.empty,
               affineSymbols = M.empty,
               isAffineScope = False,
+              machine = defaultMD,
               idCounter = 0}
 
 --------------------------------------------------------------------
@@ -1094,20 +1096,24 @@ transExpr m@(CMember e ident _ node) = do
       elem = id1 AST.:= Affine.load loc resTy (lastId (posOf node) eBs) [id0]
   return (eBs ++ [Left cIndex, Left elem, Right id1], (resTy, resSign, resTn))
 transExpr (CSizeofType decl node) = do
+  md <- machine <$> getUserState 
   t <- analyseTypeDecl decl
-  s <- sizeofType defaultMD node t
+  s <- sizeofType md node t
   transExpr (CConst (CIntConst (cInteger s) node))
 transExpr (CSizeofExpr e node) = do
+  md <- machine <$> getUserState 
   t <- tExpr [] RValue e
-  s <- sizeofType defaultMD node t
+  s <- sizeofType md node t
   transExpr (CConst (CIntConst (cInteger s) node))
 transExpr (CAlignofType decl node) = do
+  md <- machine <$> getUserState 
   t <- analyseTypeDecl decl
-  s <- alignofType defaultMD node t
+  s <- alignofType md node t
   transExpr (CConst (CIntConst (cInteger s) node))
 transExpr (CAlignofExpr e node) = do
+  md <- machine <$> getUserState 
   t <- tExpr [] RValue e
-  s <- alignofType defaultMD node t
+  s <- alignofType md node t
   transExpr (CConst (CIntConst (cInteger s) node))
 transExpr e = unsupported (posOf e) e
 
