@@ -596,7 +596,7 @@ transExpr a@(CAssign op lhs rhs node) = do
                        CMember s member _ _ -> do
                          (a, (_, b, tn)) <- transExpr s -- lookupVar (identName ident)
                          (index, ty) <- calcStructFieldIndex (posOf node) tn member
-                         return (lastId a, ty, a, b, Just index)
+                         return (lastId a, ty, a, False, Just index)
                        (CUnary CIndOp e node) | null indices -> (\(a, b) -> (lastId a, b, a, False, Nothing)) <$> transExpr e
                        _ -> (\(a, b) -> (lastId a, b, a, False, Nothing)) <$> transExpr src
   (rhsBs, rhsTy) <- transExpr (case op of
