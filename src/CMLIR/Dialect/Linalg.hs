@@ -72,6 +72,30 @@ conv2dNchwFchw loc lhs rhs output attrs block = Operation
                          DenseUInt64 $ listArray (0 :: Int, 1) $ fromIntegral <$> drop 2 attrs)
   }
 
+conv2dNhwcHwcf :: Location -> Name -> Name -> Name -> [Int] -> Block -> Operation
+conv2dNhwcHwcf loc lhs rhs output attrs block = Operation
+  { opName = "linalg.conv_2d_nhwc_hwcf"
+  , opLocation = loc
+  , opResultTypes = Explicit []
+  , opOperands = [lhs, rhs, output]
+  , opRegions = [Region [block]]
+  , opSuccessors = []
+  , opAttributes = namedAttribute "operand_segment_sizes"
+                       (DenseElementsAttr (VectorType [2] $ IntegerType Unsigned 32) $
+                         DenseUInt32 $ listArray (0 :: Int, 1) $ fromIntegral <$> [2, 1])
+                   <> namedAttribute "linalg.memoized_indexing_maps"
+                       (ArrayAttr [AffineMapAttr (Map 7 0 [Dimension 0, Add (Mul (Dimension 1) (Constant (head attrs))) (Mul (Dimension 4) (Constant (attrs !! 2))),
+                                                           Add (Mul (Dimension 2) (Constant (attrs !! 1))) (Mul (Dimension 5) (Constant (attrs !! 3))), Dimension 6])
+                                  ,AffineMapAttr (Map 7 0 [Dimension 4, Dimension 5, Dimension 6, Dimension 3])
+                                  ,AffineMapAttr (Map 7 0 [Dimension 0, Dimension 1, Dimension 2, Dimension 3])])
+                   <> namedAttribute "strides"
+                       (DenseElementsAttr (VectorType [2] $ IntegerType Signless 64) $
+                         DenseUInt64 $ listArray (0 :: Int, 1) $ fromIntegral <$> take 2 attrs)
+                   <> namedAttribute "dilations"
+                       (DenseElementsAttr (VectorType [2] $ IntegerType Signless 64) $
+                         DenseUInt64 $ listArray (0 :: Int, 1) $ fromIntegral <$> drop 2 attrs)
+  }
+
 conv2d :: Location -> Name -> Name -> Name -> [Int] -> Block -> Operation
 conv2d loc lhs rhs output attrs block = Operation
   { opName = "linalg.conv_2d"
