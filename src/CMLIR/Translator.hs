@@ -26,6 +26,7 @@ import qualified CMLIR.Dialect.Affine as Affine
 import qualified CMLIR.Dialect.SCF as SCF
 import qualified CMLIR.Dialect.Vector as Vector
 import qualified CMLIR.Dialect.Linalg as Linalg
+import qualified CMLIR.Dialect.Math as Math
 
 import Language.C.Syntax.AST
 import Language.C.Analysis.AstAnalysis
@@ -969,6 +970,26 @@ transExpr c@(CCall (CVar ident _) args node) = do
                                             (b^._1 ^..traverse._Left ++
                                             [AST.Do $ Linalg.yield2 loc [lastId $ b^._1]]))
       return (join (argsBs ^..traverse._1) ++ [Left conv2d], (outputTy, outputSign))
+    "abs"   -> builtinFunc loc id Math.abs argsBs 1
+    "atan2" -> builtinFunc loc id Math.atan2 argsBs 2
+    "atan"  -> builtinFunc loc id Math.atan argsBs 1
+    "ceil"  -> builtinFunc loc id Math.ceil argsBs 1
+    "cos"   -> builtinFunc loc id Math.cos argsBs 1
+    "erf"   -> builtinFunc loc id Math.erf argsBs 1
+    "exp2"  -> builtinFunc loc id Math.exp2 argsBs 1
+    "expm1" -> builtinFunc loc id Math.expm1 argsBs 1
+    "exp"   -> builtinFunc loc id Math.exp argsBs 1
+    "floor" -> builtinFunc loc id Math.floor argsBs 1
+    "fma"   -> builtinFunc loc id Math.fma argsBs 3
+    "log10" -> builtinFunc loc id Math.log10 argsBs 1
+    "log1p" -> builtinFunc loc id Math.log1p argsBs 1
+    "log2" -> builtinFunc loc id Math.log2 argsBs 1
+    "log" -> builtinFunc loc id Math.log argsBs 1
+    "powf" -> builtinFunc loc id Math.powf argsBs 2
+    "rsqrt" -> builtinFunc loc id Math.rsqrt argsBs 1
+    "sin" -> builtinFunc loc id Math.sin argsBs 1
+    "sqrt" -> builtinFunc loc id Math.sqrt argsBs 1
+    "tanh" -> builtinFunc loc id Math.tanh argsBs 1
     _ -> do
       (_, (ty, sign), _) <- lookupVar name
       let resTy = case ty of
@@ -976,6 +997,11 @@ transExpr c@(CCall (CVar ident _) args node) = do
                     _ -> error "expected a function type"
       let call = id AST.:= Std.call loc resTy (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
       return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (if null resTy then AST.NoneType else head resTy, sign))
+  where builtinFunc loc id op argsBs n = do
+          when (L.length argsBs /= n) $ error $ "expected " ++ show n ++ " arguments" ++ show (posOf node)
+          let (aB, (aTy, aSign)) = head argsBs
+              ast = id AST.:= op loc aTy (map lastId $ argsBs ^..traverse._1)
+          return (join (argsBs ^..traverse._1) ++ [Left ast, Right id], (aTy, aSign))
 transExpr (CUnary CPreIncOp e node) = do
   let const1 = CConst (CIntConst (cInteger 1) node)
   (incBs, _) <- transExpr (CAssign CAddAssOp e const1 node)

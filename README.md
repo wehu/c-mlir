@@ -8,6 +8,7 @@ Only a subset of c is supported based on the current semantics of MLIR dialects.
 * Static sizes of array and operations -> MemRef dialect
 * Arithmetic operations -> Arith dialect
 * A limited version of flow control(for/if) -> Affine/SCF dialect
+* math function calls -> Math dialect
 * 1D operations -> Vector dialect
 * 2D operations -> Linalg dialect
 

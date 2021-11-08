@@ -2350,3 +2350,79 @@ module  {
 }
       |]
     
+    it "can translate math functions" $ do
+      [r|
+void foo() {
+  abs(1.0);
+  atan2(1.0, 2.0);
+  atan(1.0);
+  ceil(1.0);
+  cos(1.0);
+  erf(1.0);
+  exp2(1.0);
+  expm1(1.0);
+  exp(1.0);
+  floor(1.0);
+  fma(1.0, 2.0, 3.0);
+  log10(1.0);
+  log1p(1.0);
+  log2(1.0);
+  log(1.0);
+  powf(1.0,2.0);
+  rsqrt(1.0);
+  sin(1.0);
+  sqrt(1.0);
+  tanh(1.0);
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %cst = arith.constant 1.000000e+00 : f32
+    %0 = math.abs %cst : f32
+    %cst_0 = arith.constant 1.000000e+00 : f32
+    %cst_1 = arith.constant 2.000000e+00 : f32
+    %1 = math.atan2 %cst_0, %cst_1 : f32
+    %cst_2 = arith.constant 1.000000e+00 : f32
+    %2 = math.atan %cst_2 : f32
+    %cst_3 = arith.constant 1.000000e+00 : f32
+    %3 = math.ceil %cst_3 : f32
+    %cst_4 = arith.constant 1.000000e+00 : f32
+    %4 = math.cos %cst_4 : f32
+    %cst_5 = arith.constant 1.000000e+00 : f32
+    %5 = math.erf %cst_5 : f32
+    %cst_6 = arith.constant 1.000000e+00 : f32
+    %6 = math.exp2 %cst_6 : f32
+    %cst_7 = arith.constant 1.000000e+00 : f32
+    %7 = math.expm1 %cst_7 : f32
+    %cst_8 = arith.constant 1.000000e+00 : f32
+    %8 = math.exp %cst_8 : f32
+    %cst_9 = arith.constant 1.000000e+00 : f32
+    %9 = math.floor %cst_9 : f32
+    %cst_10 = arith.constant 1.000000e+00 : f32
+    %cst_11 = arith.constant 2.000000e+00 : f32
+    %cst_12 = arith.constant 3.000000e+00 : f32
+    %10 = math.fma %cst_10, %cst_11, %cst_12 : f32
+    %cst_13 = arith.constant 1.000000e+00 : f32
+    %11 = math.log10 %cst_13 : f32
+    %cst_14 = arith.constant 1.000000e+00 : f32
+    %12 = math.log1p %cst_14 : f32
+    %cst_15 = arith.constant 1.000000e+00 : f32
+    %13 = math.log2 %cst_15 : f32
+    %cst_16 = arith.constant 1.000000e+00 : f32
+    %14 = math.log %cst_16 : f32
+    %cst_17 = arith.constant 1.000000e+00 : f32
+    %cst_18 = arith.constant 2.000000e+00 : f32
+    %15 = math.powf %cst_17, %cst_18 : f32
+    %cst_19 = arith.constant 1.000000e+00 : f32
+    %16 = math.rsqrt %cst_19 : f32
+    %cst_20 = arith.constant 1.000000e+00 : f32
+    %17 = math.sin %cst_20 : f32
+    %cst_21 = arith.constant 1.000000e+00 : f32
+    %18 = math.sqrt %cst_21 : f32
+    %cst_22 = arith.constant 1.000000e+00 : f32
+    %19 = math.tanh %cst_22 : f32
+    return
+  }
+}
+      |]
+    
