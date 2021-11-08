@@ -2370,6 +2370,26 @@ module  {
 }
       |]
     
+    it "can translate conv_2d_nchw_fchw" $ do
+      [r|
+void foo() {
+  float lhs[3][4][5][6];
+  float rhs[1][4][1][1];
+  float output[3][1][5][6];
+  conv_2d_nchw_fchw(lhs, rhs, output, 1, 1, 1, 1);
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<3x4x5x6xf32>
+    %1 = memref.alloca() : memref<1x4x1x1xf32>
+    %2 = memref.alloca() : memref<3x1x5x6xf32>
+    linalg.conv_2d_nchw_fchw {dilations = dense<1> : vector<2xi64>, strides = dense<1> : vector<2xi64>} ins(%0, %1 : memref<3x4x5x6xf32>, memref<1x4x1x1xf32>) outs(%2 : memref<3x1x5x6xf32>)
+    return
+  }
+}
+      |]
+    
     it "can translate conv_2d" $ do
       [r|
 void foo() {

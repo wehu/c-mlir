@@ -940,29 +940,30 @@ transExpr c@(CCall (CVar ident _) args node) = do
           (srcB, (srcTy, srcSign)) = argsBs !! 1
           copy = AST.Do $ MemRef.copy loc (lastId srcB) (lastId dstB)
       return (join (argsBs ^..traverse._1) ++ [Left copy], (dstTy, dstSign))
-    "conv_1d_nwc_wcf" -> convLikeFunc loc Linalg.conv1dNwcWcf (take 3 argsBs) $ getAttributes (drop 3 args)
-    "conv_1d" -> convLikeFunc loc Linalg.conv1d argsBs []
-    "conv_2d" -> convLikeFunc loc Linalg.conv2d argsBs []
-    "abs"   -> builtinFunc loc id Math.abs argsBs 1
-    "atan2" -> builtinFunc loc id Math.atan2 argsBs 2
-    "atan"  -> builtinFunc loc id Math.atan argsBs 1
-    "ceil"  -> builtinFunc loc id Math.ceil argsBs 1
-    "cos"   -> builtinFunc loc id Math.cos argsBs 1
-    "erf"   -> builtinFunc loc id Math.erf argsBs 1
-    "exp2"  -> builtinFunc loc id Math.exp2 argsBs 1
-    "expm1" -> builtinFunc loc id Math.expm1 argsBs 1
-    "exp"   -> builtinFunc loc id Math.exp argsBs 1
-    "floor" -> builtinFunc loc id Math.floor argsBs 1
-    "fma"   -> builtinFunc loc id Math.fma argsBs 3
-    "log10" -> builtinFunc loc id Math.log10 argsBs 1
-    "log1p" -> builtinFunc loc id Math.log1p argsBs 1
-    "log2"  -> builtinFunc loc id Math.log2 argsBs 1
-    "log"   -> builtinFunc loc id Math.log argsBs 1
-    "powf"  -> builtinFunc loc id Math.powf argsBs 2
-    "rsqrt" -> builtinFunc loc id Math.rsqrt argsBs 1
-    "sin"   -> builtinFunc loc id Math.sin argsBs 1
-    "sqrt"  -> builtinFunc loc id Math.sqrt argsBs 1
-    "tanh"  -> builtinFunc loc id Math.tanh argsBs 1
+    "conv_1d_nwc_wcf" -> convLikeFunc name loc Linalg.conv1dNwcWcf (take 3 argsBs) (getAttributes name (drop 3 args)) 2
+    "conv_1d" -> convLikeFunc name loc Linalg.conv1d argsBs [] 0
+    "conv_2d_nchw_fchw" -> convLikeFunc name loc Linalg.conv2dNchwFchw (take 3 argsBs) (getAttributes name (drop 3 args)) 4
+    "conv_2d" -> convLikeFunc name loc Linalg.conv2d argsBs [] 0
+    "abs"   -> builtinFunc name loc id Math.abs argsBs 1
+    "atan2" -> builtinFunc name loc id Math.atan2 argsBs 2
+    "atan"  -> builtinFunc name loc id Math.atan argsBs 1
+    "ceil"  -> builtinFunc name loc id Math.ceil argsBs 1
+    "cos"   -> builtinFunc name loc id Math.cos argsBs 1
+    "erf"   -> builtinFunc name loc id Math.erf argsBs 1
+    "exp2"  -> builtinFunc name loc id Math.exp2 argsBs 1
+    "expm1" -> builtinFunc name loc id Math.expm1 argsBs 1
+    "exp"   -> builtinFunc name loc id Math.exp argsBs 1
+    "floor" -> builtinFunc name loc id Math.floor argsBs 1
+    "fma"   -> builtinFunc name loc id Math.fma argsBs 3
+    "log10" -> builtinFunc name loc id Math.log10 argsBs 1
+    "log1p" -> builtinFunc name loc id Math.log1p argsBs 1
+    "log2"  -> builtinFunc name loc id Math.log2 argsBs 1
+    "log"   -> builtinFunc name loc id Math.log argsBs 1
+    "powf"  -> builtinFunc name loc id Math.powf argsBs 2
+    "rsqrt" -> builtinFunc name loc id Math.rsqrt argsBs 1
+    "sin"   -> builtinFunc name loc id Math.sin argsBs 1
+    "sqrt"  -> builtinFunc name loc id Math.sqrt argsBs 1
+    "tanh"  -> builtinFunc name loc id Math.tanh argsBs 1
     _ -> do
       (_, (ty, sign), _) <- lookupVar name
       let resTy = case ty of
@@ -970,21 +971,22 @@ transExpr c@(CCall (CVar ident _) args node) = do
                     _ -> error "expected a function type"
       let call = id AST.:= Std.call loc resTy (BU.fromString name) (map lastId $ argsBs ^..traverse._1)
       return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (if null resTy then AST.NoneType else head resTy, sign))
-  where getAttributes args =
+  where getAttributes name args =
           map (\v -> case intValue v of
                                Just v -> fromIntegral v
-                               Nothing -> error $ "expected int constant " ++ show (posOf node)) args
-        builtinFunc loc id op argsBs n = do
-          when (L.length argsBs /= n) $ error $ "expected " ++ show n ++ " arguments" ++ show (posOf node)
+                               Nothing -> error $ name ++ " expected int constant " ++ show (posOf node)) args
+        builtinFunc name loc id op argsBs n = do
+          when (L.length argsBs /= n) $ error $ name ++ " expected " ++ show n ++ " arguments" ++ show (posOf node)
           let (aB, (aTy, aSign)) = head argsBs
               ast = id AST.:= op loc aTy (map lastId $ argsBs ^..traverse._1)
           return (join (argsBs ^..traverse._1) ++ [Left ast, Right id], (aTy, aSign))
-        convLikeFunc loc op argsBs attrs = do
-          when (L.length argsBs /= 3) $ error $ "expected 3 arguments" ++ show (posOf node)
+        convLikeFunc name loc op argsBs attrs n = do
+          when (L.length attrs /= n) $ error $ name ++ " expected " ++ show n ++ " attributes" ++ show (posOf node)
+          when (L.length argsBs /= 3) $ error $ name ++ " expected 3 arguments" ++ show (posOf node)
           unless (all (\case
                        AST.MemRefType{} -> True
                        _ -> False) (argsBs ^..traverse._2._1)) $ 
-                error $ "conv_2d expected array as arguments" ++ show (posOf node)
+                error $ name ++ " expected array as arguments" ++ show (posOf node)
           id0 <- freshName
           id1 <- freshName
           id2 <- freshName
