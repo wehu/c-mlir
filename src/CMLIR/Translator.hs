@@ -589,10 +589,11 @@ transExpr (CVar ident node) = do
             op1 = id1 AST.:= ld
         return ([Left c0, Left op1, Right id1], (ty, sign, tn))
       else return ([Right id], (ty, sign, tn))
-transExpr (CAssign op lhs rhs node) = do
+transExpr a@(CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
   (id, ty, srcBs, isAssignable) <- case src of
                        CVar ident _ -> (\(a, b, c) -> (a, b, [], c)) <$> lookupVar (identName ident)
+                       CMember e ident _ _ -> unsupported (posOf node) a
                        (CUnary CIndOp e node) | null indices -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr e
                        _ -> (\(a, b) -> (lastId a, b, a, False)) <$> transExpr src
   (rhsBs, rhsTy) <- transExpr (case op of
@@ -1306,7 +1307,11 @@ type_ pos ms ty@(TypeDefType (TypeDefRef ident t _) quals attrs) = do
 structType :: Int -> CompType -> EnvM SType
 structType ms t@(CompType ref StructTag members attrs node) = do
   mTypes <- mapM (\case
-                    MemberDecl decl e node -> varDecl (posOf node) decl
+                    MemberDecl decl e node -> do
+                      d <- varDecl (posOf node) decl
+                      case d of
+                        (_, (AST.MemRefType{}, _, _)) -> unsupported (posOf node) decl
+                        _ -> return d
                     t -> unsupported (posOf t) t) members
   when (L.length (L.foldl' (\s t -> if null s then [t] else if head s ^._2._1 /= t ^._2._1 then t:s else s) [] mTypes) /= 1) $
     error $ "currently struct only supports all fields with same type" ++ show (posOf node)
