@@ -1093,6 +1093,14 @@ transExpr m@(CMember e ident _ node) = do
       cIndex = id0 AST.:= constInt loc AST.IndexType index
       elem = id1 AST.:= Affine.load loc resTy (lastId (posOf node) eBs) [id0]
   return (eBs ++ [Left cIndex, Left elem, Right id1], (resTy, resSign, resTn))
+transExpr (CSizeofType decl node) = do
+  t <- analyseTypeDecl decl
+  s <- sizeofType defaultMD node t
+  transExpr (CConst (CIntConst (cInteger s) node))
+transExpr (CSizeofExpr e node) = do
+  t <- tExpr [] RValue e
+  s <- sizeofType defaultMD node t
+  transExpr (CConst (CIntConst (cInteger s) node))
 transExpr e = unsupported (posOf e) e
 
 calcStructFieldIndex :: Position -> Maybe SUERef -> Ident -> EnvM (Int, SType)
