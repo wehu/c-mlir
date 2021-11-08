@@ -217,6 +217,7 @@ translateToMLIR opts tu =
                 Just m <- MLIR.moduleFromOperation nativeOp
                 MLIR.withPassManager ctx $ \pm -> do
                   when (toLLVM opts) $ do
+                    MLIR.addConvertLinalgToStandardPass pm
                     MLIR.addConvertAffineToStandardPass pm
                     MLIR.addConvertSCFToStandardPass  pm
                     MLIR.addConvertMemRefToLLVMPass   pm
