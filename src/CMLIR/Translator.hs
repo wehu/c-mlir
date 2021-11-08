@@ -66,6 +66,7 @@ data Env = Env {decls :: [Decl],
                 funsWithBody :: M.Map String AST.Type,
                 enumerators :: [Enumerator],
                 typeDefs :: M.Map String TypeDef,
+                compTypeDefs :: M.Map SUERef CompType,
                 labels :: M.Map String BU.ByteString,
                 enums :: M.Map String Integer,
                 vars :: M.Map String (BU.ByteString, SType, Bool),
@@ -85,6 +86,7 @@ initEnv = Env{decls = [],
               funsWithBody = M.empty,
               enumerators = [],
               typeDefs = M.empty,
+              compTypeDefs = M.empty,
               labels = M.empty,
               enums = M.empty,
               vars = M.empty,
@@ -1193,7 +1195,8 @@ recordKernelFunctions (CTranslUnit decls _) = do
       _ -> return ()
 
 handlers :: DeclEvent -> EnvM ()
-handlers (TagEvent (CompDef compT)) = return ()
+handlers (TagEvent (CompDef compT@(CompType ref _ _ _ _))) = do
+  modifyUserState (\s -> s{compTypeDefs=M.insert ref compT (compTypeDefs s)})
 handlers (TagEvent (EnumDef (EnumType _ es _ node))) = modifyUserState (\s -> s{enumerators=enumerators s ++ es})
 handlers (DeclEvent (Declaration decl)) = modifyUserState (\s -> s{decls=decls s ++ [decl]})
 handlers (DeclEvent (FunctionDef funDef)) = modifyUserState (\s -> s{funDefs=funDefs s ++ [funDef]})
@@ -1242,7 +1245,11 @@ type_ pos ms ty@(DirectType name quals attrs) =
     TyFloating (id -> TyFloatN n _) -> unsupported pos ty
     TyComplex t -> do (ct, sign) <- type_ pos ms (DirectType (TyFloating t) quals attrs)
                       return (AST.ComplexType ct, sign)
-    TyComp ref -> unsupported pos ty
+    TyComp (CompTypeRef ref _ _) -> do
+      tdef <- M.lookup ref . compTypeDefs <$> getUserState 
+      case tdef of
+        Just tdef -> structType ms tdef
+        Nothing -> error $ "cannot find comp type " ++ show ref ++ show pos
     TyEnum ref -> return (AST.IntegerType AST.Signless 32, True)
     TyBuiltin _ -> unsupported pos ty
     _ -> unsupported pos ty
@@ -1268,6 +1275,14 @@ type_ pos ms ty@(TypeDefType (TypeDefRef ident t _) quals attrs) = do
       if null vsAttrs then return (tt, sign)
       else return (AST.VectorType vsAttrs tt, sign)
     Nothing -> unsupported pos ty
+
+structType :: Int -> CompType -> EnvM SType
+structType ms t@(CompType _ StructTag members attrs node) = do
+  mTypes <- mapM (\case
+                    MemberDecl decl e node -> varDecl (posOf node) decl
+                    t -> unsupported (posOf t) t) members
+  return (AST.TupleType (mTypes ^..traverse._2._1), False)
+structType _ t = unsupported (posOf t) t
 
 getExtVectorAttrs :: Attributes -> [Int]
 getExtVectorAttrs attrs = [fromIntegral $ fromJust $ intValue e| (Attr ident [e] node) <- attrs,
