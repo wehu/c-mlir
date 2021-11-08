@@ -193,83 +193,83 @@ defaultOptions = Options {toLLVM = False, dumpLoc = False, jits = [], simplize =
 
 -- | Translate c AST to MLIR
 translateToMLIR :: Options -> CTranslUnit -> IO String
-translateToMLIR opts tu =
-   MLIR.withContext (\ctx -> do
-     MLIR.registerAllDialects ctx
-     let (ast, fs) = let res = runTrav initEnv $ do
-                              -- record all kernels
-                              recordKernelFunctions tu
-                              -- analyze globals
-                              withExtDeclHandler (analyseAST tu) handlers
-                              -- add all enums
-                              getUserState  >>= mapM_ addEnum . enumerators
-                              -- add all global function declarations
-                              getUserState  >>= mapM_ registerFunction . decls
-                              -- translate all functions with definition body
-                              fs <- getUserState >>= mapM transFunction . funDefs
-                              -- add declarations for all functions without body
-                              ds <- getUserState >>= mapM transGDecl . decls
-                              -- generate a module
-                              id <- freshName
-                              fds <- funsWithBody <$> getUserState
-                              return (AST.ModuleOp $ AST.Block id [] (join ds ++ fs), fds)
-                   in case res of
-                       Left errs -> error $ show errs
-                       Right (res, _) -> res
-     nativeOp <- AST.fromAST ctx (mempty, mempty) ast
-     check <- do
-                -- run passes to llvm ir
-                Just m <- MLIR.moduleFromOperation nativeOp
-                MLIR.withPassManager ctx $ \pm -> do
-                  when (toLLVM opts) $ do
-                    MLIR.addConvertLinalgToStandardPass pm
-                    MLIR.addConvertAffineToStandardPass pm
-                    MLIR.addConvertSCFToStandardPass  pm
-                    MLIR.addConvertMemRefToLLVMPass   pm
-                    MLIR.addConvertVectorToLLVMPass   pm
-                    MLIR.addConvertStandardToLLVMPass pm
-                    MLIR.addConvertReconcileUnrealizedCastsPass pm
-                  when (simplize opts) $ do
-                    MLIR.addTransformsCanonicalizerPass pm
-                  (== MLIR.Success) <$> MLIR.runPasses pm m
-     --MLIR.dump nativeOp
-     check <- if not (toLLVM opts) && not (simplize opts)
-              then MLIR.verifyOperation nativeOp
-              else return check
-     unless check $ exitWith (ExitFailure 1)
-     if not . null $ jits opts then do
-       -- run jit
-       join <$> forM (jits opts) (\fn -> do
-         Just m <- MLIR.moduleFromOperation nativeOp
-         evalContT $ do
-           let ft = fs ^. at fn
-               argSizes =
-                  case ft of
-                    Just ft ->
-                      case ft of
-                        (AST.FunctionType args results) ->
-                          map sizeOfType args ++ map sizeOfType results
-                        _ -> []
-                    Nothing -> []
-               buffer (t, size, n) = do
-                 case t of
-                   AST.MemRefType {} -> do
-                     vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN size (+1) (1 :: Int8)
-                     ptr <- ContT $ withForeignPtr fptr
-                     structPtr <- ContT $ MLIR.packStruct64 $
-                       [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr] ++ replicate (2*n+1) (MLIR.SomeStorable (0::Int64))
-                     return (MLIR.SomeStorable structPtr, vec)
-                   _ -> do
-                     vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN 0 (+1) (1 :: Int8)
-                     return (MLIR.SomeStorable (0::Int64), vec) -- error "only support memref type in argument for jit"
-           inputs <- mapM buffer argSizes
-           (Just eng) <- ContT $ MLIR.withExecutionEngine m
-           name <- ContT $ MLIR.withStringRef (BU.fromString fn)
-           (Just ()) <- liftIO $ MLIR.executionEngineInvoke @() eng name (inputs ^..traverse._1)
-           liftIO $ join <$> mapM (fmap show . V.unsafeFreeze) (inputs ^..traverse._2))
-     else
-       BU.toString <$> (if dumpLoc opts then MLIR.showOperationWithLocation
-                        else MLIR.showOperation) nativeOp)
+translateToMLIR opts tu = do
+  MLIR.withContext (\ctx -> do
+    MLIR.registerAllDialects ctx
+    let (ast, fs) = let res = runTrav initEnv $ do
+                             -- record all kernels
+                             recordKernelFunctions tu
+                             -- analyze globals
+                             withExtDeclHandler (analyseAST tu) handlers
+                             -- add all enums
+                             getUserState  >>= mapM_ addEnum . enumerators
+                             -- add all global function declarations
+                             getUserState  >>= mapM_ registerFunction . decls
+                             -- translate all functions with definition body
+                             fs <- getUserState >>= mapM transFunction . funDefs
+                             -- add declarations for all functions without body
+                             ds <- getUserState >>= mapM transGDecl . decls
+                             -- generate a module
+                             id <- freshName
+                             fds <- funsWithBody <$> getUserState
+                             return (AST.ModuleOp $ AST.Block id [] (join ds ++ fs), fds)
+                  in case res of
+                      Left errs -> error $ show errs
+                      Right (res, _) -> res
+    nativeOp <- AST.fromAST ctx (mempty, mempty) ast
+    check <- do
+               -- run passes to llvm ir
+               Just m <- MLIR.moduleFromOperation nativeOp
+               MLIR.withPassManager ctx $ \pm -> do
+                 when (toLLVM opts) $ do
+                   MLIR.addConvertLinalgToStandardPass pm
+                   MLIR.addConvertAffineToStandardPass pm
+                   MLIR.addConvertSCFToStandardPass  pm
+                   MLIR.addConvertMemRefToLLVMPass   pm
+                   MLIR.addConvertVectorToLLVMPass   pm
+                   MLIR.addConvertStandardToLLVMPass pm
+                   MLIR.addConvertReconcileUnrealizedCastsPass pm
+                 when (simplize opts) $ do
+                   MLIR.addTransformsCanonicalizerPass pm
+                 (== MLIR.Success) <$> MLIR.runPasses pm m
+    --MLIR.dump nativeOp
+    check <- if not (toLLVM opts) && not (simplize opts)
+             then MLIR.verifyOperation nativeOp
+             else return check
+    unless check $ exitWith (ExitFailure 1)
+    if not . null $ jits opts then do
+      -- run jit
+      join <$> forM (jits opts) (\fn -> do
+        Just m <- MLIR.moduleFromOperation nativeOp
+        evalContT $ do
+          let ft = fs ^. at fn
+              argSizes =
+                 case ft of
+                   Just ft ->
+                     case ft of
+                       (AST.FunctionType args results) ->
+                         map sizeOfType args ++ map sizeOfType results
+                       _ -> []
+                   Nothing -> []
+              buffer (t, size, n) = do
+                case t of
+                  AST.MemRefType {} -> do
+                    vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN size (+1) (1 :: Int8)
+                    ptr <- ContT $ withForeignPtr fptr
+                    structPtr <- ContT $ MLIR.packStruct64 $
+                      [MLIR.SomeStorable ptr, MLIR.SomeStorable ptr] ++ replicate (2*n+1) (MLIR.SomeStorable (0::Int64))
+                    return (MLIR.SomeStorable structPtr, vec)
+                  _ -> do
+                    vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN 0 (+1) (1 :: Int8)
+                    return (MLIR.SomeStorable (0::Int64), vec) -- error "only support memref type in argument for jit"
+          inputs <- mapM buffer argSizes
+          (Just eng) <- ContT $ MLIR.withExecutionEngine m
+          name <- ContT $ MLIR.withStringRef (BU.fromString fn)
+          (Just ()) <- liftIO $ MLIR.executionEngineInvoke @() eng name (inputs ^..traverse._1)
+          liftIO $ join <$> mapM (fmap show . V.unsafeFreeze) (inputs ^..traverse._2))
+    else
+      BU.toString <$> (if dumpLoc opts then MLIR.showOperationWithLocation
+                       else MLIR.showOperation) nativeOp)
 
 sizeOfType :: AST.Type -> (AST.Type, Int, Int)
 sizeOfType ty@(AST.IntegerType _ s) = (ty, ceiling (fromIntegral s/8), 1)
@@ -1199,7 +1199,8 @@ handlers (TagEvent (CompDef compT@(CompType ref _ _ _ _))) = do
   modifyUserState (\s -> s{compTypeDefs=M.insert ref compT (compTypeDefs s)})
 handlers (TagEvent (EnumDef (EnumType _ es _ node))) = modifyUserState (\s -> s{enumerators=enumerators s ++ es})
 handlers (DeclEvent (Declaration decl)) = modifyUserState (\s -> s{decls=decls s ++ [decl]})
-handlers (DeclEvent (FunctionDef funDef)) = modifyUserState (\s -> s{funDefs=funDefs s ++ [funDef]})
+handlers (DeclEvent (FunctionDef funDef)) = do
+  modifyUserState (\s -> s{funDefs=funDefs s ++ [funDef]})
 handlers (TypeDefEvent typeDef@(TypeDef ident ty attrs node)) = do
   let name = identName ident
   modifyUserState (\s -> s{typeDefs=M.insert name typeDef $ typeDefs s})
@@ -1217,10 +1218,10 @@ varName NoName = ""
 type_ :: Position -> Int -> Type -> EnvM SType
 type_ pos ms (FunctionType ty attrs) = f ty
   where f (FunType resType argTypes _) = do
-            ps <- mapM (fmap (^. _2 . _1) . paramDecl pos) argTypes
-            rs <- mapM (fmap (^. _1) . type_  pos ms) [resType]
-            rt <- type_ pos ms resType
-            return (AST.FunctionType ps [t | t <- rs, t /= AST.NoneType], rt ^. _2)
+          ps <- mapM (fmap (^. _2 . _1) . paramDecl pos) argTypes
+          rs <- mapM (fmap (^. _1) . type_  pos ms) [resType]
+          rt <- type_ pos ms resType
+          return (AST.FunctionType ps [t | t <- rs, t /= AST.NoneType], rt ^. _2)
         f (FunTypeIncomplete ty) = type_ pos ms ty
 type_ pos ms ty@(DirectType name quals attrs) =
   case name of
