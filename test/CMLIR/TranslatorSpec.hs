@@ -2330,6 +2330,26 @@ module  {
 }
       |]
     
+    it "can translate conv_1d" $ do
+      [r|
+void foo() {
+  float lhs[3];
+  float rhs[1];
+  float output[3];
+  conv_1d(lhs, rhs, output);
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<3xf32>
+    %1 = memref.alloca() : memref<1xf32>
+    %2 = memref.alloca() : memref<3xf32>
+    linalg.conv_1d ins(%0, %1 : memref<3xf32>, memref<1xf32>) outs(%2 : memref<3xf32>)
+    return
+  }
+}
+      |]
+    
     it "can translate conv_2d" $ do
       [r|
 void foo() {

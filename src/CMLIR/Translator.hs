@@ -940,36 +940,8 @@ transExpr c@(CCall (CVar ident _) args node) = do
           (srcB, (srcTy, srcSign)) = argsBs !! 1
           copy = AST.Do $ MemRef.copy loc (lastId srcB) (lastId dstB)
       return (join (argsBs ^..traverse._1) ++ [Left copy], (dstTy, dstSign))
-    "conv_2d" -> do
-      when (L.length argsBs /= 3) $ error $ "conv_2d expected 3 arguments" ++ show (posOf node)
-      unless (all (\case
-                   AST.MemRefType{} -> True
-                   _ -> False) (argsBs ^..traverse._2._1)) $ 
-            error $ "conv_2d expected array as arguments" ++ show (posOf node)
-      id0 <- freshName
-      id1 <- freshName
-      id2 <- freshName
-      id3 <- freshName
-      let (lhsB, (lhsTy, lhsSign)) = head argsBs
-          (rhsB, (rhsTy, rhsSign)) = argsBs !! 1
-          (outputB, (outputTy, outputSign)) = argsBs !! 2
-      b <- underScope $ do
-        let lhsN = BU.toString id1
-            rhsN = BU.toString id2
-            outputN = BU.toString id3 
-        addVar lhsN (id1, (AST.memrefTypeElement lhsTy, lhsSign), False)
-        addVar rhsN (id2, (AST.memrefTypeElement rhsTy, rhsSign), False)
-        addVar outputN (id3, (AST.memrefTypeElement outputTy, outputSign), False)
-        transExpr (CBinary CAddOp (CVar (Ident outputN (read outputN) node) node)
-                           (CBinary CMulOp (CVar (Ident lhsN (read lhsN) node) node)
-                                           (CVar (Ident rhsN (read rhsN) node) node) node) node)
-      let conv2d = AST.Do $ Linalg.conv2d loc (lastId lhsB) (lastId rhsB) (lastId outputB)
-                             (AST.Block id0 [(id1, AST.memrefTypeElement lhsTy),
-                                             (id2, AST.memrefTypeElement rhsTy),
-                                             (id3, AST.memrefTypeElement outputTy)]
-                                            (b^._1 ^..traverse._Left ++
-                                            [AST.Do $ Linalg.yield2 loc [lastId $ b^._1]]))
-      return (join (argsBs ^..traverse._1) ++ [Left conv2d], (outputTy, outputSign))
+    "conv_1d" -> convLikeFunc loc Linalg.conv1d argsBs
+    "conv_2d" -> convLikeFunc loc Linalg.conv2d argsBs
     "abs"   -> builtinFunc loc id Math.abs argsBs 1
     "atan2" -> builtinFunc loc id Math.atan2 argsBs 2
     "atan"  -> builtinFunc loc id Math.atan argsBs 1
@@ -983,13 +955,13 @@ transExpr c@(CCall (CVar ident _) args node) = do
     "fma"   -> builtinFunc loc id Math.fma argsBs 3
     "log10" -> builtinFunc loc id Math.log10 argsBs 1
     "log1p" -> builtinFunc loc id Math.log1p argsBs 1
-    "log2" -> builtinFunc loc id Math.log2 argsBs 1
-    "log" -> builtinFunc loc id Math.log argsBs 1
-    "powf" -> builtinFunc loc id Math.powf argsBs 2
+    "log2"  -> builtinFunc loc id Math.log2 argsBs 1
+    "log"   -> builtinFunc loc id Math.log argsBs 1
+    "powf"  -> builtinFunc loc id Math.powf argsBs 2
     "rsqrt" -> builtinFunc loc id Math.rsqrt argsBs 1
-    "sin" -> builtinFunc loc id Math.sin argsBs 1
-    "sqrt" -> builtinFunc loc id Math.sqrt argsBs 1
-    "tanh" -> builtinFunc loc id Math.tanh argsBs 1
+    "sin"   -> builtinFunc loc id Math.sin argsBs 1
+    "sqrt"  -> builtinFunc loc id Math.sqrt argsBs 1
+    "tanh"  -> builtinFunc loc id Math.tanh argsBs 1
     _ -> do
       (_, (ty, sign), _) <- lookupVar name
       let resTy = case ty of
@@ -1002,6 +974,36 @@ transExpr c@(CCall (CVar ident _) args node) = do
           let (aB, (aTy, aSign)) = head argsBs
               ast = id AST.:= op loc aTy (map lastId $ argsBs ^..traverse._1)
           return (join (argsBs ^..traverse._1) ++ [Left ast, Right id], (aTy, aSign))
+        convLikeFunc loc op argsBs = do
+          when (L.length argsBs /= 3) $ error $ "expected 3 arguments" ++ show (posOf node)
+          unless (all (\case
+                       AST.MemRefType{} -> True
+                       _ -> False) (argsBs ^..traverse._2._1)) $ 
+                error $ "conv_2d expected array as arguments" ++ show (posOf node)
+          id0 <- freshName
+          id1 <- freshName
+          id2 <- freshName
+          id3 <- freshName
+          let (lhsB, (lhsTy, lhsSign)) = head argsBs
+              (rhsB, (rhsTy, rhsSign)) = argsBs !! 1
+              (outputB, (outputTy, outputSign)) = argsBs !! 2
+          b <- underScope $ do
+            let lhsN = BU.toString id1
+                rhsN = BU.toString id2
+                outputN = BU.toString id3 
+            addVar lhsN (id1, (AST.memrefTypeElement lhsTy, lhsSign), False)
+            addVar rhsN (id2, (AST.memrefTypeElement rhsTy, rhsSign), False)
+            addVar outputN (id3, (AST.memrefTypeElement outputTy, outputSign), False)
+            transExpr (CBinary CAddOp (CVar (Ident outputN (read outputN) node) node)
+                               (CBinary CMulOp (CVar (Ident lhsN (read lhsN) node) node)
+                                               (CVar (Ident rhsN (read rhsN) node) node) node) node)
+          let ast = AST.Do $ op loc (lastId lhsB) (lastId rhsB) (lastId outputB)
+                                 (AST.Block id0 [(id1, AST.memrefTypeElement lhsTy),
+                                                 (id2, AST.memrefTypeElement rhsTy),
+                                                 (id3, AST.memrefTypeElement outputTy)]
+                                                (b^._1 ^..traverse._Left ++
+                                                [AST.Do $ Linalg.yield2 loc [lastId $ b^._1]]))
+          return (join (argsBs ^..traverse._1) ++ [Left ast], (outputTy, outputSign))
 transExpr (CUnary CPreIncOp e node) = do
   let const1 = CConst (CIntConst (cInteger 1) node)
   (incBs, _) <- transExpr (CAssign CAddAssOp e const1 node)
