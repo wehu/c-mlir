@@ -1317,10 +1317,10 @@ type_ pos ms ty@(TypeDefType (TypeDefRef ident t _) quals attrs) = do
 structType :: Int -> CompType -> EnvM SType
 structType ms t@(CompType ref StructTag members attrs node) = do
   mTypes <- mapM (\case
-                    MemberDecl decl e node -> do
+                    m@(MemberDecl decl e node) -> do
                       d <- varDecl (posOf node) decl
                       case d of
-                        (_, (AST.MemRefType{}, _, _)) -> unsupported (posOf node) decl
+                        (_, (AST.MemRefType{}, _, _)) -> unsupported (posOf node) m
                         _ -> return d
                     t -> unsupported (posOf t) t) members
   when (L.length (L.foldl' (\s t -> if null s then [t] else if head s ^._2._1 /= t ^._2._1 then t:s else s) [] mTypes) /= 1) $
