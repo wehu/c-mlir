@@ -97,7 +97,7 @@ initEnv = Env{decls = [],
               affineDimensions = M.empty,
               affineSymbols = M.empty,
               isAffineScope = False,
-              machine = defaultMD,
+              machine = defaultMD{ptrSize=8*2+8+2*8}, -- memref size
               idCounter = 0}
 
 --------------------------------------------------------------------
@@ -1186,7 +1186,7 @@ transConst (CStrConst s node) = transStr s (getPos node)
 transInt :: CInteger -> AST.Location -> EnvM ([BindingOrName], SType)
 transInt (CInteger i _ flag) loc = do
   id <- freshName
-  md <- machine <$> getUserState 
+  md <- machine <$> getUserState
   let bits | testFlag FlagUnsigned flag = 8 * fromIntegral (iSize md TyUInt)
            | testFlag FlagLong flag = 8 * fromIntegral (iSize md TyLong)
            | testFlag FlagLongLong flag = 8 * fromIntegral (iSize md TyLLong)
