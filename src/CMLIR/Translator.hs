@@ -1101,6 +1101,14 @@ transExpr (CSizeofExpr e node) = do
   t <- tExpr [] RValue e
   s <- sizeofType defaultMD node t
   transExpr (CConst (CIntConst (cInteger s) node))
+transExpr (CAlignofType decl node) = do
+  t <- analyseTypeDecl decl
+  s <- alignofType defaultMD node t
+  transExpr (CConst (CIntConst (cInteger s) node))
+transExpr (CAlignofExpr e node) = do
+  t <- tExpr [] RValue e
+  s <- alignofType defaultMD node t
+  transExpr (CConst (CIntConst (cInteger s) node))
 transExpr e = unsupported (posOf e) e
 
 calcStructFieldIndex :: Position -> Maybe SUERef -> Ident -> EnvM (Int, SType)

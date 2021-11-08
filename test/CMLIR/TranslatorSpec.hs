@@ -2568,3 +2568,29 @@ module  {
   }
 }
       |]
+    
+    it "can translate alignof" $ do
+      [r|
+void foo() {
+  int i;
+  typeof(i) j;
+  i = alignof(i);
+  i = alignof(int);
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %c1 = arith.constant 1 : index
+    %0 = memref.alloca(%c1) : memref<?xi32>
+    %c1_0 = arith.constant 1 : index
+    %1 = memref.alloca(%c1_0) : memref<?xi32>
+    %c4_i32 = arith.constant 4 : i32
+    %c0 = arith.constant 0 : index
+    affine.store %c4_i32, %0[%c0] : memref<?xi32>
+    %c4_i32_1 = arith.constant 4 : i32
+    %c0_2 = arith.constant 0 : index
+    affine.store %c4_i32_1, %0[%c0_2] : memref<?xi32>
+    return
+  }
+}
+      |]
