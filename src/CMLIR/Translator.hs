@@ -488,7 +488,7 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
     lbInd <- applyAffineExpr loc ds syms $ fromJust lbAE ^._1
     ubInd <- applyAffineExpr loc ds syms $ fromJust ubAE ^._1
     b <- underScope $ do
-      modifyUserState (\s -> s{isAffineScope = True})
+      --modifyUserState (\s -> s{isAffineScope = True})
       varName <- freshName
       let ty = AST.IntegerType AST.Signless 32
       (index, id) <- fromIndex loc varName ty
