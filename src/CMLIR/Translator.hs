@@ -801,10 +801,16 @@ transExpr c@(CCast ty (CIndex e index _) node) = do
                                 [([offset], stride) | offset <- offsetsBs^..traverse._1|stride <- srcStridesBs]
           let dstSizes = map fromJust (AST.memrefTypeShape dstTy)
               dstStrides = L.foldl' (\s i -> i * head s : s) [1] $ reverse $ tail dstSizes
-              resTy = dstTy{AST.memrefTypeMemorySpace=AST.memrefTypeMemorySpace srcTy}
-              v = id AST.:= MemRef.reinterpretCast loc resTy srcId [lastId (posOf node) (head offsetBs)] [] [] [minBound] dstSizes dstStrides
-          dstStrideBs <- mapM (\s -> (AST.:= constInt (getPos node) AST.IndexType s) <$> freshName) dstStrides
-          return (join (offsets ^..traverse._1) ++ (offsetsBs ^..traverse._1) ++ join srcDims ++ join (reverse srcStridesBs) ++ join (reverse offsetBs) ++ [Left v], resTy)
+          dstStridesBs <- mapM (\s -> (\id -> [Left $ id AST.:= constInt loc AST.IndexType s]) <$> freshName) dstStrides 
+          let rank = L.length dstSizes
+              layout = AST.AffineMapAttr (Affine.Map rank rank
+                            [L.foldl' Affine.Add (Affine.Add (Affine.Dimension (rank-1)) (Affine.Symbol 0))
+                               [Affine.Mul (Affine.Dimension d) (Affine.Symbol s) |d <- [0..rank-2] | s <- reverse [1..rank-1]]])
+              resTy = dstTy{AST.memrefTypeMemorySpace=AST.memrefTypeMemorySpace srcTy, AST.memrefTypeLayout=Just layout}
+              v = id AST.:= MemRef.reinterpretCast loc resTy srcId
+                                [lastId (posOf node) (head offsetBs)] [] (map (lastId (posOf node)) $ init dstStridesBs)
+                                [minBound] dstSizes (map (const minBound) (init dstStrides) ++ [last dstStrides])
+          return (join (offsets ^..traverse._1) ++ (offsetsBs ^..traverse._1) ++ join srcDims ++ join (reverse srcStridesBs) ++ join (reverse offsetBs) ++ join dstStridesBs ++ [Left v], resTy)
 transExpr c@(CCast t e node) = do
   (srcBs, (srcTy, srcSign, srcTn)) <- transExpr e
   (dstTy, dstSign, dstTn) <- analyseTypeDecl t >>= type_ (posOf node) 0

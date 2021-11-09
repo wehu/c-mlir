@@ -2592,3 +2592,47 @@ module  {
   }
 }
       |]
+
+    it "can translate memory veiw" $ do
+      [r|
+void foo() {
+    int a[10][20];
+    ((int [10][10])a[0][10])[1][2] = 1;
+}
+      |] `shouldBeTranslatedAs` [r|
+#map0 = affine_map<(d0, d1)[s0, s1] -> (d1 + s0 + d0 * s1)>
+#map1 = affine_map<() -> (1)>
+#map2 = affine_map<() -> (2)>
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<10x20xi32>
+    %c0_i32 = arith.constant 0 : i32
+    %c10_i32 = arith.constant 10 : i32
+    %1 = arith.index_cast %c0_i32 : i32 to index
+    %2 = arith.index_cast %c10_i32 : i32 to index
+    %c0 = arith.constant 0 : index
+    %3 = memref.dim %0, %c0 : memref<10x20xi32>
+    %c1 = arith.constant 1 : index
+    %4 = memref.dim %0, %c1 : memref<10x20xi32>
+    %c1_0 = arith.constant 1 : index
+    %5 = arith.muli %c1_0, %4 : index
+    %c0_1 = arith.constant 0 : index
+    %6 = arith.muli %1, %5 : index
+    %7 = arith.addi %c0_1, %6 : index
+    %8 = arith.muli %2, %c1_0 : index
+    %9 = arith.addi %7, %8 : index
+    %c10 = arith.constant 10 : index
+    %c1_2 = arith.constant 1 : index
+    %10 = memref.reinterpret_cast %0 to offset: [%9], sizes: [10, 10], strides: [%c10, 1] : memref<10x20xi32> to memref<10x10xi32, #map0>
+    %c1_i32 = arith.constant 1 : i32
+    %c1_i32_3 = arith.constant 1 : i32
+    %c2_i32 = arith.constant 2 : i32
+    %11 = arith.index_cast %c1_i32_3 : i32 to index
+    %12 = arith.index_cast %c2_i32 : i32 to index
+    %13 = affine.apply #map1()
+    %14 = affine.apply #map2()
+    affine.store %c1_i32, %10[%13, %14] : memref<10x10xi32, #map0>
+    return
+  }
+}
+      |]
