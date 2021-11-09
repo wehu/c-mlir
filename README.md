@@ -136,8 +136,8 @@ __kernel void GEMM(const int M, const int N, const int K,
                    const __global float* B,
                    __global float* C,
                    // Local memory to fit a tile of TS*TS elements of A and B
-                   __local float Asub[TS][1],
-                   __local float Bsub[1][TS]) {
+                   __local float Asub[TS][TS],
+                   __local float Bsub[TS][TS]) {
     
     // Thread identifiers
     const int row = get_local_id(0); // Local row ID (max: TS)
@@ -183,7 +183,7 @@ module  {
   func private @get_local_id(i32) -> i32
   func private @get_group_id(i32) -> i32
   func private @barrier(i32)
-  func @GEMM(%arg0: i32, %arg1: i32, %arg2: i32, %arg3: memref<?xf32, 2>, %arg4: memref<?xf32, 2>, %arg5: memref<?xf32, 2>, %arg6: memref<10x1xf32, 1>, %arg7: memref<1x10xf32, 1>) attributes {cl.kernel = true, llvm.emit_c_interface} {
+  func @GEMM(%arg0: i32, %arg1: i32, %arg2: i32, %arg3: memref<?xf32, 2>, %arg4: memref<?xf32, 2>, %arg5: memref<?xf32, 2>, %arg6: memref<10x10xf32, 1>, %arg7: memref<10x10xf32, 1>) attributes {cl.kernel = true, llvm.emit_c_interface} {
     %c10_i32 = arith.constant 10 : i32
     %cst = arith.constant 0.000000e+00 : f32
     %c1_i32 = arith.constant 1 : i32
@@ -206,14 +206,14 @@ module  {
     affine.store %cst, %14[0] : memref<1xf32>
     affine.for %arg8 = 0 to #map()[%1] {
       %16 = affine.load %arg3[(%arg8 * 10 + symbol(%5)) * symbol(%0) + symbol(%9)] : memref<?xf32, 2>
-      affine.store %16, %arg6[symbol(%5), symbol(%3)] : memref<10x1xf32, 1>
+      affine.store %16, %arg6[symbol(%5), symbol(%3)] : memref<10x10xf32, 1>
       %17 = affine.load %arg4[%arg8 * 10 + symbol(%3) + symbol(%13) * symbol(%1)] : memref<?xf32, 2>
-      affine.store %17, %arg7[symbol(%5), symbol(%3)] : memref<1x10xf32, 1>
+      affine.store %17, %arg7[symbol(%5), symbol(%3)] : memref<10x10xf32, 1>
       call @barrier(%c1_i32) : (i32) -> ()
       affine.for %arg9 = 0 to 10 {
         %18 = affine.load %14[0] : memref<1xf32>
-        %19 = affine.load %arg6[%arg9, symbol(%3)] : memref<10x1xf32, 1>
-        %20 = affine.load %arg7[symbol(%5), %arg9] : memref<1x10xf32, 1>
+        %19 = affine.load %arg6[%arg9, symbol(%3)] : memref<10x10xf32, 1>
+        %20 = affine.load %arg7[symbol(%5), %arg9] : memref<10x10xf32, 1>
         %21 = arith.mulf %19, %20 : f32
         %22 = arith.addf %18, %21 : f32
         affine.store %22, %14[0] : memref<1xf32>
