@@ -64,6 +64,25 @@ view loc ty src offset sizes = Operation
   , opAttributes = NoAttrs
   }
 
+reinterpretCast :: Location -> Type -> Name -> [Name] -> [Name] -> [Name] -> [Int] -> [Int] -> [Int] -> Operation
+reinterpretCast loc ty src offsets sizes strides staticOffsets staticSizes staticStrides = Operation
+  { opName = "memref.reinterpret_cast"
+  , opLocation = loc
+  , opResultTypes = Explicit [ty]
+  , opOperands = src:offsets++sizes++strides
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = namedAttribute "operand_segment_sizes"
+                       (DenseElementsAttr (VectorType [4] $ IntegerType Unsigned 32) $
+                         DenseUInt32 $ listArray (0 :: Int, 3) $ fromIntegral <$> [1, length offsets, length sizes, length strides])
+                  <> namedAttribute "static_offsets" 
+                      (ArrayAttr $ IntegerAttr (IntegerType Signless 64) . fromIntegral <$> staticOffsets)
+                  <> namedAttribute "static_sizes"
+                      (ArrayAttr $ IntegerAttr (IntegerType Signless 64) . fromIntegral <$> staticSizes)
+                  <> namedAttribute "static_strides" 
+                      (ArrayAttr $ IntegerAttr (IntegerType Signless 64) . fromIntegral <$> staticStrides)
+  }
+
 copy :: Location -> Name -> Name -> Operation
 copy loc src dst = Operation
   { opName = "memref.copy"
