@@ -178,6 +178,7 @@ __kernel void GEMM(const int M, const int N, const int K,
 
 Output IR as below:
 ```mlir
+#map = affine_map<()[s0] -> (s0 floordiv 10)>
 module  {
   func private @get_local_id(i32) -> i32
   func private @get_group_id(i32) -> i32
@@ -188,51 +189,39 @@ module  {
     %c1_i32 = arith.constant 1 : i32
     %c0_i32 = arith.constant 0 : i32
     %0 = arith.index_cast %arg0 : i32 to index
-    %1 = call @get_local_id(%c0_i32) : (i32) -> i32
-    %2 = arith.index_cast %1 : i32 to index
-    %3 = call @get_local_id(%c1_i32) : (i32) -> i32
-    %4 = arith.index_cast %3 : i32 to index
-    %5 = call @get_group_id(%c0_i32) : (i32) -> i32
-    %6 = arith.muli %5, %c10_i32 : i32
-    %7 = arith.addi %6, %1 : i32
-    %8 = arith.index_cast %7 : i32 to index
-    %9 = call @get_group_id(%c1_i32) : (i32) -> i32
-    %10 = arith.muli %9, %c10_i32 : i32
-    %11 = arith.addi %10, %3 : i32
-    %12 = arith.index_cast %11 : i32 to index
-    %13 = memref.alloca() : memref<1xf32>
-    affine.store %cst, %13[0] : memref<1xf32>
-    %14 = arith.divsi %arg2, %c10_i32 : i32
-    %15 = arith.index_cast %14 : i32 to index
-    affine.for %arg8 = 0 to %15 {
-      %17 = arith.index_cast %arg8 : index to i32
-      %18 = arith.muli %17, %c10_i32 : i32
-      %19 = arith.addi %18, %1 : i32
-      %20 = arith.muli %17, %c10_i32 : i32
-      %21 = arith.addi %20, %3 : i32
-      %22 = arith.muli %21, %arg0 : i32
-      %23 = arith.addi %22, %7 : i32
-      %24 = arith.index_cast %23 : i32 to index
-      %25 = memref.load %arg3[%24] : memref<?xf32, 2>
-      affine.store %25, %arg6[symbol(%4), symbol(%2)] : memref<10x1xf32, 1>
-      %26 = arith.muli %11, %arg2 : i32
-      %27 = arith.addi %26, %19 : i32
-      %28 = arith.index_cast %27 : i32 to index
-      %29 = memref.load %arg4[%28] : memref<?xf32, 2>
-      affine.store %29, %arg7[symbol(%4), symbol(%2)] : memref<1x10xf32, 1>
+    %1 = arith.index_cast %arg2 : i32 to index
+    %2 = call @get_local_id(%c0_i32) : (i32) -> i32
+    %3 = arith.index_cast %2 : i32 to index
+    %4 = call @get_local_id(%c1_i32) : (i32) -> i32
+    %5 = arith.index_cast %4 : i32 to index
+    %6 = call @get_group_id(%c0_i32) : (i32) -> i32
+    %7 = arith.muli %6, %c10_i32 : i32
+    %8 = arith.addi %7, %2 : i32
+    %9 = arith.index_cast %8 : i32 to index
+    %10 = call @get_group_id(%c1_i32) : (i32) -> i32
+    %11 = arith.muli %10, %c10_i32 : i32
+    %12 = arith.addi %11, %4 : i32
+    %13 = arith.index_cast %12 : i32 to index
+    %14 = memref.alloca() : memref<1xf32>
+    affine.store %cst, %14[0] : memref<1xf32>
+    affine.for %arg8 = 0 to #map()[%1] {
+      %16 = affine.load %arg3[(%arg8 * 10 + symbol(%5)) * symbol(%0) + symbol(%9)] : memref<?xf32, 2>
+      affine.store %16, %arg6[symbol(%5), symbol(%3)] : memref<10x1xf32, 1>
+      %17 = affine.load %arg4[%arg8 * 10 + symbol(%3) + symbol(%13) * symbol(%1)] : memref<?xf32, 2>
+      affine.store %17, %arg7[symbol(%5), symbol(%3)] : memref<1x10xf32, 1>
       call @barrier(%c1_i32) : (i32) -> ()
       affine.for %arg9 = 0 to 10 {
-        %30 = affine.load %13[0] : memref<1xf32>
-        %31 = affine.load %arg6[%arg9, symbol(%2)] : memref<10x1xf32, 1>
-        %32 = affine.load %arg7[symbol(%4), %arg9] : memref<1x10xf32, 1>
-        %33 = arith.mulf %31, %32 : f32
-        %34 = arith.addf %30, %33 : f32
-        affine.store %34, %13[0] : memref<1xf32>
+        %18 = affine.load %14[0] : memref<1xf32>
+        %19 = affine.load %arg6[%arg9, symbol(%3)] : memref<10x1xf32, 1>
+        %20 = affine.load %arg7[symbol(%5), %arg9] : memref<1x10xf32, 1>
+        %21 = arith.mulf %19, %20 : f32
+        %22 = arith.addf %18, %21 : f32
+        affine.store %22, %14[0] : memref<1xf32>
       }
       call @barrier(%c1_i32) : (i32) -> ()
     }
-    %16 = affine.load %13[0] : memref<1xf32>
-    affine.store %16, %arg5[symbol(%12) * symbol(%0) + symbol(%8)] : memref<?xf32, 2>
+    %15 = affine.load %14[0] : memref<1xf32>
+    affine.store %15, %arg5[symbol(%13) * symbol(%0) + symbol(%9)] : memref<?xf32, 2>
     return
   }
 }
@@ -419,6 +408,7 @@ __kernel void GEMM(const int M, const int N, const int K,
 
 Output IR as below:
 ```mlir
+#map = affine_map<()[s0] -> (s0 floordiv 10)>
 module  {
   func private @get_local_id(i32) -> i32
   func private @get_group_id(i32) -> i32
@@ -428,43 +418,31 @@ module  {
     %c10_i32 = arith.constant 10 : i32
     %c1_i32 = arith.constant 1 : i32
     %0 = arith.index_cast %arg0 : i32 to index
-    %1 = call @get_local_id(%c0_i32) : (i32) -> i32
-    %2 = arith.index_cast %1 : i32 to index
-    %3 = call @get_local_id(%c1_i32) : (i32) -> i32
-    %4 = arith.index_cast %3 : i32 to index
-    %5 = call @get_group_id(%c0_i32) : (i32) -> i32
-    %6 = arith.muli %5, %c10_i32 : i32
-    %7 = arith.addi %6, %1 : i32
-    %8 = arith.index_cast %7 : i32 to index
-    %9 = call @get_group_id(%c1_i32) : (i32) -> i32
-    %10 = arith.muli %9, %c10_i32 : i32
-    %11 = arith.addi %10, %3 : i32
-    %12 = arith.index_cast %11 : i32 to index
-    %13 = memref.alloca() : memref<1x1xf32>
-    %14 = arith.divsi %arg2, %c10_i32 : i32
-    %15 = arith.index_cast %14 : i32 to index
-    affine.for %arg8 = 0 to %15 {
-      %17 = arith.index_cast %arg8 : index to i32
-      %18 = arith.muli %17, %c10_i32 : i32
-      %19 = arith.addi %18, %1 : i32
-      %20 = arith.muli %17, %c10_i32 : i32
-      %21 = arith.addi %20, %3 : i32
-      %22 = arith.muli %21, %arg0 : i32
-      %23 = arith.addi %22, %7 : i32
-      %24 = arith.index_cast %23 : i32 to index
-      %25 = memref.load %arg3[%24] : memref<?xf32, 2>
-      affine.store %25, %arg6[symbol(%4), symbol(%2)] : memref<10x1xf32, 1>
-      %26 = arith.muli %11, %arg2 : i32
-      %27 = arith.addi %26, %19 : i32
-      %28 = arith.index_cast %27 : i32 to index
-      %29 = memref.load %arg4[%28] : memref<?xf32, 2>
-      affine.store %29, %arg7[symbol(%4), symbol(%2)] : memref<1x10xf32, 1>
+    %1 = arith.index_cast %arg2 : i32 to index
+    %2 = call @get_local_id(%c0_i32) : (i32) -> i32
+    %3 = arith.index_cast %2 : i32 to index
+    %4 = call @get_local_id(%c1_i32) : (i32) -> i32
+    %5 = arith.index_cast %4 : i32 to index
+    %6 = call @get_group_id(%c0_i32) : (i32) -> i32
+    %7 = arith.muli %6, %c10_i32 : i32
+    %8 = arith.addi %7, %2 : i32
+    %9 = arith.index_cast %8 : i32 to index
+    %10 = call @get_group_id(%c1_i32) : (i32) -> i32
+    %11 = arith.muli %10, %c10_i32 : i32
+    %12 = arith.addi %11, %4 : i32
+    %13 = arith.index_cast %12 : i32 to index
+    %14 = memref.alloca() : memref<1x1xf32>
+    affine.for %arg8 = 0 to #map()[%1] {
+      %16 = affine.load %arg3[(%arg8 * 10 + symbol(%5)) * symbol(%0) + symbol(%9)] : memref<?xf32, 2>
+      affine.store %16, %arg6[symbol(%5), symbol(%3)] : memref<10x1xf32, 1>
+      %17 = affine.load %arg4[%arg8 * 10 + symbol(%3) + symbol(%13) * symbol(%1)] : memref<?xf32, 2>
+      affine.store %17, %arg7[symbol(%5), symbol(%3)] : memref<1x10xf32, 1>
       call @barrier(%c1_i32) : (i32) -> ()
-      linalg.matmul ins(%arg7, %arg6 : memref<1x10xf32, 1>, memref<10x1xf32, 1>) outs(%13 : memref<1x1xf32>)
+      linalg.matmul ins(%arg7, %arg6 : memref<1x10xf32, 1>, memref<10x1xf32, 1>) outs(%14 : memref<1x1xf32>)
       call @barrier(%c1_i32) : (i32) -> ()
     }
-    %16 = affine.load %13[0, 0] : memref<1x1xf32>
-    affine.store %16, %arg5[symbol(%12) * symbol(%0) + symbol(%8)] : memref<?xf32, 2>
+    %15 = affine.load %14[0, 0] : memref<1x1xf32>
+    affine.store %15, %arg5[symbol(%13) * symbol(%0) + symbol(%9)] : memref<?xf32, 2>
     return
   }
 }
