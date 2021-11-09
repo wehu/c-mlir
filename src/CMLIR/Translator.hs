@@ -757,6 +757,25 @@ transExpr (CIndex e index node) = do
           else
             return $ join (indexBs ^.. traverse . _1) ++
                       toIndices ^.. traverse . _1 ++ [Left $ id AST.:= (MemRef.Load ty srcId (toIndices ^.. traverse . _2)){AST.opLocation=getPos node}]
+transExpr c@(CCast ty (CIndex e index _) node) = do
+  let (src, indices) = collectIndices e [index]
+  (srcId, (srcTy, srcSign, srcTn), srcBs, isAssignable) <-
+     case src of
+       CVar ident _ -> (\(a, b, c) -> (a, b, [],c)) <$> lookupVar (posOf node) (identName ident)
+       _ -> (\(a, b) -> (lastId (posOf node) a, b, a, False)) <$> transExpr src
+  (dstTy, dstSign, dstTn) <- analyseTypeDecl ty >>= type_ (posOf node) 0
+  if srcTy == dstTy then return (srcBs, (srcTy, srcSign, srcTn))
+  else do 
+    unless (isStaticShapeMemref dstTy) $ errMsg (posOf node) "expected a static shape as dst type"
+    id <- freshName
+    id0 <- freshName
+    id1 <- freshName
+    subview <- if isAssignable
+        then ([Left $ id0 AST.:= constIndex0 (getPos node)
+              ,Left $ id1 AST.:= Affine.load (getPos node) srcTy srcId [id0]] ++) <$> subView (getPos node) dstTy srcTy id id1 indices
+        else subView (getPos node) dstTy srcTy id srcId indices
+    return (srcBs ++ subview ++ [Right id], (dstTy, dstSign, dstTn))
+  where subView loc dstTy srcTy id srcId indices = unsupported (posOf node) c
 transExpr c@(CCast t e node) = do
   (srcBs, (srcTy, srcSign, srcTn)) <- transExpr e
   (dstTy, dstSign, dstTn) <- analyseTypeDecl t >>= type_ (posOf node) 0
@@ -782,6 +801,7 @@ transExpr c@(CCast t e node) = do
             return [Left $ id AST.:= (if bits srcTy > bits dstTy then Arith.TruncI else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc (AST.IntegerType AST.Signless (bits dstTy)) srcId
                    ,Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc dstTy id]
           | isI8Memref srcTy && isMemref dstTy = do
+            when (isJust $ AST.memrefTypeLayout srcTy) $ errMsg (posOf node) "cast's src type should not has affine map"
             let ds = AST.memrefTypeShape dstTy
             sizes <- foldM (\(s, index) d ->
                               if isn't _Just d then do
@@ -793,6 +813,7 @@ transExpr c@(CCast t e node) = do
             return $ join (sizes ^._1) ++ [Left $ id AST.:= constIndex0 loc
                    ,Left $ dstId AST.:= MemRef.view loc dstTy srcId id (map (lastId (posOf node)) (sizes ^._1))]
           | isMemref srcTy && isMemref dstTy = do
+            when (isJust $ AST.memrefTypeLayout srcTy) $ errMsg (posOf node) "cast's src type should not has affine map"
             let srcRank = L.length $ AST.memrefTypeShape srcTy
                 dstRank = L.length $ AST.memrefTypeShape dstTy
             if srcRank /= dstRank then do

@@ -328,8 +328,8 @@ __kernel void GEMM(const int M, const int N, const int K,
                    const __global float* B,
                    __global float* C,
                    // Local memory to fit a tile of TS*TS elements of A and B
-                   __local float Asub[TS][1],
-                   __local float Bsub[1][TS]) {
+                   __local float Asub[TS][TS],
+                   __local float Bsub[TS][TS]) {
     
     // Thread identifiers
     const int row = get_local_id(0); // Local row ID (max: TS)
