@@ -958,6 +958,7 @@ transExpr c@(CCall (CVar ident _) args node) = do
     "conv_2d_nchw_fchw" -> convLikeFunc name loc Linalg.conv2dNchwFchw (take 3 argsBs) (getAttributes name (drop 3 args)) 4
     "conv_2d_nhwc_hwcf" -> convLikeFunc name loc Linalg.conv2dNhwcHwcf (take 3 argsBs) (getAttributes name (drop 3 args)) 4
     "conv_2d" -> convLikeFunc name loc Linalg.conv2d argsBs [] 0
+    "matmul" -> convLikeFunc name loc Linalg.matmul argsBs [] 0
     "abs"   -> builtinFunc name loc id Math.abs argsBs 1
     "atan2" -> builtinFunc name loc id Math.atan2 argsBs 2
     "atan"  -> builtinFunc name loc id Math.atan argsBs 1

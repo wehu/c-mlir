@@ -113,6 +113,23 @@ conv2d loc lhs rhs output attrs block = Operation
                                   ,AffineMapAttr (Map 4 0 [Dimension 0, Dimension 1])])
   }
 
+matmul :: Location -> Name -> Name -> Name -> [Int] -> Block -> Operation
+matmul loc lhs rhs output attrs block = Operation
+  { opName = "linalg.matmul"
+  , opLocation = loc
+  , opResultTypes = Explicit []
+  , opOperands = [lhs, rhs, output]
+  , opRegions = [Region [block]]
+  , opSuccessors = []
+  , opAttributes = namedAttribute "operand_segment_sizes"
+                       (DenseElementsAttr (VectorType [2] $ IntegerType Unsigned 32) $
+                         DenseUInt32 $ listArray (0 :: Int, 1) $ fromIntegral <$> [2, 1])
+                   <> namedAttribute "linalg.memoized_indexing_maps"
+                       (ArrayAttr [AffineMapAttr (Map 3 0 [Dimension 0, Dimension 2])
+                                  ,AffineMapAttr (Map 3 0 [Dimension 2, Dimension 1])
+                                  ,AffineMapAttr (Map 3 0 [Dimension 0, Dimension 1])])
+  }
+
 yield2 :: Location -> [Name] -> Operation
 yield2 loc args = Operation
   { opName = "linalg.yield"
