@@ -348,14 +348,14 @@ __kernel void GEMM(const int M, const int N, const int K,
         // Load one tile of A and B into local memory
         const int tiledRow = TS*t + row;
         const int tiledCol = TS*t + col;
-        Asub[col][row] = A[tiledCol*M + globalRow];
+        Asub[row][col] = A[tiledCol*M + globalRow];
         Bsub[col][row] = B[globalCol*K + tiledRow];
  
         // Synchronise to make sure the tile is loaded
         barrier(CLK_LOCAL_MEM_FENCE);
  
         // Perform the computation for a single tile
-        matmul(Bsub, Asub, acc);
+        matmul((float [1][TS])Bsub[col][0], (float [TS][1])Asub[row][0], acc);
  
         // Synchronise before loading the next tile
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -368,13 +368,16 @@ __kernel void GEMM(const int M, const int N, const int K,
 
 Output IR as below:
 ```mlir
-#map = affine_map<()[s0] -> (s0 floordiv 10)>
+map0 = affine_map<()[s0] -> (s0 floordiv 10)>
+#map1 = affine_map<(d0, d1)[s0, s1] -> (d1 + s0 + d0 * s1)>
 module  {
   func private @get_local_id(i32) -> i32
   func private @get_group_id(i32) -> i32
   func private @barrier(i32)
-  func @GEMM(%arg0: i32, %arg1: i32, %arg2: i32, %arg3: memref<?xf32, 2>, %arg4: memref<?xf32, 2>, %arg5: memref<?xf32, 2>, %arg6: memref<10x1xf32, 1>, %arg7: memref<1x10xf32, 1>) attributes {cl.kernel = true, llvm.emit_c_interface} {
+  func @GEMM(%arg0: i32, %arg1: i32, %arg2: i32, %arg3: memref<?xf32, 2>, %arg4: memref<?xf32, 2>, %arg5: memref<?xf32, 2>, %arg6: memref<10x10xf32, 1>, %arg7: memref<10x10xf32, 1>) attributes {cl.kernel = true, llvm.emit_c_interface} {
     %c0_i32 = arith.constant 0 : i32
+    %c1 = arith.constant 1 : index
+    %c10 = arith.constant 10 : index
     %c10_i32 = arith.constant 10 : i32
     %c1_i32 = arith.constant 1 : i32
     %0 = arith.index_cast %arg0 : i32 to index
@@ -392,13 +395,19 @@ module  {
     %12 = arith.addi %11, %4 : i32
     %13 = arith.index_cast %12 : i32 to index
     %14 = memref.alloca() : memref<1x1xf32>
-    affine.for %arg8 = 0 to #map()[%1] {
+    affine.for %arg8 = 0 to #map0()[%1] {
       %16 = affine.load %arg3[(%arg8 * 10 + symbol(%5)) * symbol(%0) + symbol(%9)] : memref<?xf32, 2>
-      affine.store %16, %arg6[symbol(%5), symbol(%3)] : memref<10x1xf32, 1>
+      affine.store %16, %arg6[symbol(%3), symbol(%5)] : memref<10x10xf32, 1>
       %17 = affine.load %arg4[%arg8 * 10 + symbol(%3) + symbol(%13) * symbol(%1)] : memref<?xf32, 2>
-      affine.store %17, %arg7[symbol(%5), symbol(%3)] : memref<1x10xf32, 1>
+      affine.store %17, %arg7[symbol(%5), symbol(%3)] : memref<10x10xf32, 1>
       call @barrier(%c1_i32) : (i32) -> ()
-      linalg.matmul ins(%arg7, %arg6 : memref<1x10xf32, 1>, memref<10x1xf32, 1>) outs(%14 : memref<1x1xf32>)
+      %18 = arith.index_cast %4 : i32 to index
+      %19 = arith.muli %18, %c10 : index
+      %20 = memref.reinterpret_cast %arg7 to offset: [%19], sizes: [1, 10], strides: [%c10, 1] : memref<10x10xf32, 1> to memref<1x10xf32, #map1, 1>
+      %21 = arith.index_cast %2 : i32 to index
+      %22 = arith.muli %21, %c10 : index
+      %23 = memref.reinterpret_cast %arg6 to offset: [%22], sizes: [10, 1], strides: [%c1, 1] : memref<10x10xf32, 1> to memref<10x1xf32, #map1, 1>
+      linalg.matmul ins(%20, %23 : memref<1x10xf32, #map1, 1>, memref<10x1xf32, #map1, 1>) outs(%14 : memref<1x1xf32>)
       call @barrier(%c1_i32) : (i32) -> ()
     }
     %15 = affine.load %14[0, 0] : memref<1x1xf32>
