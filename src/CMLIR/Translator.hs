@@ -1531,8 +1531,8 @@ type_ pos ms (ArrayType t size quals attrs) = do
       msAttr = AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms
   mt <- type_ pos ms t
   case mt of
-    (AST.MemRefType sizes t Nothing ms, sign, tn) | all (isn't _Nothing) sizes ->
-      return (AST.MemRefType (s:sizes) t Nothing ms, sign, tn)
+    (AST.MemRefType sizes t attrs ms, sign, tn) | all (isn't _Nothing) sizes ->
+      return (AST.MemRefType (s:sizes) t attrs ms, sign, tn)
     (t, sign, tn) -> return (AST.MemRefType [s] t Nothing (Just msAttr), sign, tn)
 type_ pos ms ty@(TypeDefType (TypeDefRef ident t _) quals attrs) = do
   tdefs <- typeDefs <$> getUserState
