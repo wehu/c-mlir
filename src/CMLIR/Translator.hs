@@ -469,15 +469,20 @@ transInit init = unsupported (posOf init) init
 
 -- | Translate a statement
 transStmt :: CStatement NodeInfo -> EnvM [BindingOrName]
+-- translate return
 transStmt (CReturn Nothing node) =
   return [Left $ AST.Do $ Std.Return (getPos node) []]
 transStmt (CReturn (Just e) node) = do
   (bs, ty) <- transExpr e
   let id = lastId (posOf node) bs
   return $ bs ++ [Left $ AST.Do $ Std.Return (getPos node) [id]]
+
+-- translate expression
 transStmt (CExpr (Just e) node) = do
   (bs, ty) <- transExpr e
   return bs
+
+-- translate for
 transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
                               [(Just (CDeclr (Just ident0) [] Nothing [] _),
                                 Just (CInitExpr lb _),
@@ -565,6 +570,8 @@ transStmt (CFor init cond post body node) = underScope $ do
               (AST.Region [AST.Block condId [] (condBs ^..traverse ._Left ++ [AST.Do $ SCF.condition loc (lastId (posOf node) condBs) []])])
               (AST.Region [bodyBs])
   return $ initBs ++ [Left while]
+
+-- translate while
 transStmt (CWhile cond body isDoWhile node) = do
   -- translate while to scf.while
   bodyBs <- if isDoWhile then do
@@ -573,6 +580,8 @@ transStmt (CWhile cond body isDoWhile node) = do
             else return []
   forBs <- transStmt (CFor (Left Nothing) (Just cond) Nothing body node)
   return $ bodyBs ++ forBs
+
+-- translate if else
 transStmt (CIf cond t (Just f) node) = do
   -- translate ifelse to scf.if
   let loc = getPos node
@@ -588,10 +597,14 @@ transStmt (CIf cond t Nothing node) = do
   tb <- underScope $ transBlock [] [] t [AST.Do $ SCF.yield loc []]
   let if_ = AST.Do $ SCF.ifelse loc [] (lastId (posOf node) condBs) (AST.Region [tb]) (AST.Region [])
   return $ condBs ++ [Left if_]
+
+-- translate scope
 transStmt s@(CCompound labels items node) = do
   let loc = getPos node
   b <- underScope $ transBlock [] [] s [AST.Do $ MemRef.allocaScopeReturn loc [] []]
   return [Left $ AST.Do $ MemRef.allocaScope loc (AST.Region [b])]
+
+-- unsupported
 transStmt e = unsupported (posOf e) e
 
 -- | Translate an expression
@@ -733,10 +746,14 @@ transExpr (CBinary bop lhs rhs node) = do
                         CGeqOp -> if isF then Arith.cmpf 3 else (if lhsSign then Arith.cmpi 5 else Arith.cmpi 9)
                         ) loc resTy lhsId rhsId
   return (lhsBs ++ rhsBs ++ [Left op], (resTy, resSign, resTn))
+
+-- translate comma expression
 transExpr (CComma es _) = do
   bs <- mapM transExpr es
   let ty = last bs ^._2
   return (join (bs ^..traverse._1), ty)
+
+-- translate select expression
 transExpr (CCond cond (Just lhs) rhs node) = do
   (condBs, (condTy, condSign, condTn)) <- transExpr cond
   (lhsBs, (lhsTy, lhsSign, lhsTn)) <- transExpr lhs
