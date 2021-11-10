@@ -144,8 +144,8 @@ freshName = do
 unsupported :: (Pretty a, Pos a) => a -> EnvM b
 unsupported a = throwTravError $ unsupportedFeature (show (pretty a)) a
 
-errMsg :: Position -> String -> EnvM b
-errMsg pos s = throwTravError $ userErr $ "error:\n" ++ s ++ "@" ++ show pos
+errMsg :: NodeInfo -> String -> EnvM b
+errMsg pos s = throwTravError $ userErr $ "error:\n" ++ s ++ "@" ++ show (posOf pos)
 
 --------------------------------------------------------------------------
 -- AST translators
@@ -315,7 +315,7 @@ addEnum (Enumerator ident e _ node) = do
 -- | Translate global declaration
 transGDecl :: Decl -> EnvM [AST.Binding]
 transGDecl decl@(Decl var node) = do
-  (name, (ty, sign, _)) <- varDecl (posOf node) var
+  (name, (ty, sign, _)) <- varDecl node var
   funcs <- funsWithBody <$> getUserState
   let found = M.lookup name funcs
   if isn't _Nothing found then return []
@@ -333,17 +333,17 @@ transGDecl decl@(Decl var node) = do
 -- | Register all function types into env
 registerFunction :: Decl -> EnvM ()
 registerFunction f@(Decl var node) = do
-  (name, (ty, sign, tn)) <- varDecl (posOf node) var
+  (name, (ty, sign, tn)) <- varDecl node var
   addVar name (BU.fromString name, (ty, sign, tn), False)
 
 -- | Translate a function to mlir AST
 transFunction :: FunDef -> EnvM AST.Binding
 transFunction f@(FunDef var stmt node) = do
-  (name, (ty, sign, _)) <- varDecl (posOf node) var
+  (name, (ty, sign, _)) <- varDecl node var
   modifyUserState (\s -> s{funsWithBody=M.insert name ty (funsWithBody s)})
   underScope $ do
     modifyUserState (\s -> s{isAffineScope = True})
-    ps <- params (posOf node) var
+    ps <- params node var
     argIds <- mapM (\(n, t) -> do
                       id <- freshName
                       addVar n (id, t, False)
@@ -391,8 +391,8 @@ transBlockItem (CBlockDecl (CDecl q ds node)) = do
         objDef <- M.lookup (posOf decl) . objDefs <$> getUserState
         case objDef of
           Just objDef -> transLocalDecl objDef
-          Nothing -> errMsg (posOf decl) $ "cannot find " ++ show decl
-      _ -> errMsg (posOf node) $ "unsupported " ++ show d) ds
+          Nothing -> errMsg node $ "cannot find " ++ show decl
+      _ -> errMsg node $ "unsupported " ++ show d) ds
 transBlockItem s = unsupported s
 
 -- | Translate a local variable declaration
@@ -400,12 +400,12 @@ transLocalDecl :: ObjDef -> EnvM [BindingOrName]
 transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
   let storage = declStorage var
   case storage of
-    Static{} -> errMsg (posOf node) "static is not supported"
+    Static{} -> errMsg node "static is not supported"
     _ -> return ()
   id <- freshName
   id0 <- freshName
   initBs <- mapM transInit init
-  (n, t) <- varDecl (posOf node) var
+  (n, t) <- varDecl node var
   let (isPtr, isConst) = case orgTy of
                 (PtrType t quals _) -> (True, constant quals)
                 (DirectType _ quals _) -> (False, constant quals)
@@ -622,7 +622,7 @@ transExpr (CVar ident node) = do
       let ty = AST.IntegerType AST.Signless 32
       return ([Left $ id AST.:= constInt (getPos node) ty (fromInteger enum), Right id], (ty, True, Nothing))
     Nothing -> do
-      (id, (ty, sign, tn), isAssignable) <- lookupVar (posOf node) name
+      (id, (ty, sign, tn), isAssignable) <- lookupVar node name
       if isAssignable then do
         id0 <- freshName
         id1 <- freshName
@@ -637,10 +637,10 @@ transExpr a@(CAssign op lhs rhs node) = do
   let (src, indices) = collectIndices lhs []
   (id, ty, srcBs, isAssignable, member) <- case src of
                        CVar ident _ ->
-                        (\(a, b, c) -> (a, b, [], c, Nothing)) <$> lookupVar (posOf node) (identName ident)
+                        (\(a, b, c) -> (a, b, [], c, Nothing)) <$> lookupVar node (identName ident)
                        CMember s member _ _ -> do
                          (a, (_, b, tn)) <- transExpr s
-                         (index, ty) <- calcStructFieldIndex (posOf node) tn member
+                         (index, ty) <- calcStructFieldIndex node tn member
                          return (lastId node a, ty, a, False, Just index)
                        (CUnary CIndOp e node) | null indices ->
                          (\(a, b) -> (lastId node a, b, a, False, Nothing)) <$> transExpr e
@@ -771,7 +771,7 @@ transExpr (CIndex e index node) = do
   let (src, indices) = collectIndices e [index]
   (srcId, (srcTy, sign, srcTn), srcBs, isAssignable) <-
      case src of
-       CVar ident _ -> (\(a, b, c) -> (a, b, [],c)) <$> lookupVar (posOf node) (identName ident)
+       CVar ident _ -> (\(a, b, c) -> (a, b, [],c)) <$> lookupVar node (identName ident)
        _ -> (\(a, b) -> (lastId node a, b, a, False)) <$> transExpr src
   ty <- case srcTy of
              AST.MemRefType _ ty _ _ -> return ty
@@ -811,15 +811,15 @@ transExpr c@(CCast ty (CIndex e index _) node) = do
   let (src, indices) = collectIndices e [index]
   (srcId, (srcTy, srcSign, srcTn), srcBs, isAssignable) <-
      case src of
-       CVar ident _ -> (\(a, b, c) -> (a, b, [],c)) <$> lookupVar (posOf node) (identName ident)
+       CVar ident _ -> (\(a, b, c) -> (a, b, [],c)) <$> lookupVar node (identName ident)
        _ -> (\(a, b) -> (lastId node a, b, a, False)) <$> transExpr src
-  (dstTy, dstSign, dstTn) <- analyseTypeDecl ty >>= type_ (posOf node) 0
+  (dstTy, dstSign, dstTn) <- analyseTypeDecl ty >>= type_ node 0
   if srcTy == dstTy then return (srcBs, (srcTy, srcSign, srcTn))
   else do
     unless (isStaticShapeMemref dstTy) $
-      errMsg (posOf node) "expected a static shape as dst type"
+      errMsg node "expected a static shape as dst type"
     when (isJust $ AST.memrefTypeLayout srcTy) $
-      errMsg (posOf node) "cast's src type should not has affine map"
+      errMsg node "cast's src type should not has affine map"
     id <- freshName
     id0 <- freshName
     id1 <- freshName
@@ -869,7 +869,7 @@ transExpr c@(CCast ty (CIndex e index _) node) = do
 -- translate casting experssion
 transExpr c@(CCast t e node) = do
   (srcBs, (srcTy, srcSign, srcTn)) <- transExpr e
-  (dstTy, dstSign, dstTn) <- analyseTypeDecl t >>= type_ (posOf node) 0
+  (dstTy, dstSign, dstTn) <- analyseTypeDecl t >>= type_ node 0
   if srcTy == dstTy then return (srcBs, (srcTy, srcSign, srcTn))
   else do
     dstId <- freshName
@@ -897,7 +897,7 @@ transExpr c@(CCast t e node) = do
           | isI8Memref srcTy && isMemref dstTy = do
             -- char * to others
             when (isJust $ AST.memrefTypeLayout srcTy) $
-              errMsg (posOf node) "cast's src type should not has affine map"
+              errMsg node "cast's src type should not has affine map"
             dstTy <- return dstTy{AST.memrefTypeMemorySpace=AST.memrefTypeMemorySpace srcTy}
             let ds = AST.memrefTypeShape dstTy
             sizes <- foldM (\(s, index) d ->
@@ -910,7 +910,7 @@ transExpr c@(CCast t e node) = do
             return $ join (sizes ^._1) ++ [Left $ id AST.:= constIndex0 loc
                    ,Left $ dstId AST.:= MemRef.view loc dstTy srcId id (map (lastId node) (sizes ^._1))]
           | isMemref srcTy && isMemref dstTy = do
-            when (isJust $ AST.memrefTypeLayout srcTy) $ errMsg (posOf node) "cast's src type should not has affine map"
+            when (isJust $ AST.memrefTypeLayout srcTy) $ errMsg node "cast's src type should not has affine map"
             dstTy <- return dstTy{AST.memrefTypeMemorySpace=AST.memrefTypeMemorySpace srcTy}
             let srcRank = L.length $ AST.memrefTypeShape srcTy
                 dstRank = L.length $ AST.memrefTypeShape dstTy
@@ -1044,7 +1044,7 @@ transExpr c@(CCall (CVar ident _) [src', dst] node) | identName ident == "vload"
   (dstBs, (dstTy, dstSign, dstTn)) <- transExpr dst
   ty <- case dstTy of
              AST.MemRefType [Nothing] t _ _ -> return t
-             _ -> errMsg (posOf node) "vload expected a pointer to vector type"
+             _ -> errMsg node "vload expected a pointer to vector type"
   id <- freshName
   id0 <- freshName
   let load = id AST.:= Vector.vload loc ty (lastId node srcBs) (toIndex ^..traverse._2)
@@ -1077,12 +1077,12 @@ transExpr c@(CCall (CVar ident _) args node) = do
       let malloc = id AST.:= MemRef.alloc loc resTy [toId] []
       return (join (argsBs ^..traverse._1) ++ [toB] ++ [Left malloc, Right id], (resTy, sizeSign, sizeTn))
     "free" -> do
-      when (L.length argsBs /= 1) $ errMsg (posOf node) "free expected 1 arguments"
+      when (L.length argsBs /= 1) $ errMsg node "free expected 1 arguments"
       let (mB, (mTy, mSign, mTn)) = head argsBs
           free = AST.Do $ MemRef.dealloc loc (lastId node mB)
       return (join (argsBs ^..traverse._1) ++ [Left free], (mTy, mSign, mTn))
     "memcpy" -> do
-      when (L.length argsBs /= 2) $ errMsg (posOf node) "memcpy expected 2 arguments"
+      when (L.length argsBs /= 2) $ errMsg node "memcpy expected 2 arguments"
       let (dstB, (dstTy, dstSign, dstTn)) = head argsBs
           (srcB, (srcTy, srcSign, srcTn)) = argsBs !! 1
           copy = AST.Do $ MemRef.copy loc (lastId node srcB) (lastId node dstB)
@@ -1104,17 +1104,17 @@ transExpr c@(CCall (CVar ident _) args node) = do
     -- matmul
     "matmul" -> convLikeFunc name loc Linalg.matmul argsBs [] 0
     "transpose" -> do
-      when (null argsBs) $ errMsg (posOf node) "transpose expected >= 1 arguments"
+      when (null argsBs) $ errMsg node "transpose expected >= 1 arguments"
       let (mB, (mTy, mSign, mTn)) = head argsBs
-      unless (isStaticShapeMemref mTy) $ errMsg (posOf node) "transpose expected a array as argument"
-      when (isJust $ AST.memrefTypeLayout mTy) $ errMsg (posOf node) "transpose's src type should not has affine map"
+      unless (isStaticShapeMemref mTy) $ errMsg node "transpose expected a array as argument"
+      when (isJust $ AST.memrefTypeLayout mTy) $ errMsg node "transpose's src type should not has affine map"
       indicesBs <- mapM (\_-> (\id -> [Left $ id AST.:= constIndex0 loc]) <$> freshName) [0..L.length (AST.memrefTypeShape mTy)-1]
       id0 <- freshName
       id1 <- freshName
       id2 <- freshName
       let permute = map intValue $ tail args
-      when (L.length permute /= L.length (AST.memrefTypeShape mTy)) $ errMsg (posOf node) "permute mismatch with shape"
-      when (any (isn't _Just) permute) $ errMsg (posOf node) "transpose expected constant int as permute"
+      when (L.length permute /= L.length (AST.memrefTypeShape mTy)) $ errMsg node "permute mismatch with shape"
+      when (any (isn't _Just) permute) $ errMsg node "transpose expected constant int as permute"
       let vTy = AST.VectorType (map fromJust (AST.memrefTypeShape mTy)) (AST.memrefTypeElement mTy)
           v = id0 AST.:= Vector.vload loc vTy (lastId node mB) (map (lastId node) indicesBs)
           shape = [AST.memrefTypeShape mTy !! fromIntegral (fromJust i) | i <- permute]
@@ -1150,28 +1150,28 @@ transExpr c@(CCall (CVar ident _) args node) = do
 
     -- normal function call
     _ -> do
-      (_, (ty, sign, tn), _) <- lookupVar (posOf node) name
+      (_, (ty, sign, tn), _) <- lookupVar node name
       resTy <- case ty of
                     AST.FunctionType _ resTy -> return resTy
-                    _ -> errMsg (posOf node) "expected a function type"
+                    _ -> errMsg node "expected a function type"
       let call = id AST.:= Std.call loc resTy (BU.fromString name) (map (lastId node) $ argsBs ^..traverse._1)
       return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (if null resTy then AST.NoneType else head resTy, sign, tn))
   where getAttributes name args =
           mapM (\v -> case intValue v of
                                Just v -> return $ fromIntegral v
-                               Nothing -> errMsg (posOf node) $ name ++ " expected int constant " ++ show v) args
+                               Nothing -> errMsg node $ name ++ " expected int constant " ++ show v) args
         builtinFunc name loc id op argsBs n = do
-          when (L.length argsBs /= n) $ errMsg (posOf node) $ name ++ " expected " ++ show n ++ " arguments"
+          when (L.length argsBs /= n) $ errMsg node $ name ++ " expected " ++ show n ++ " arguments"
           let (aB, (aTy, aSign, aTn)) = head argsBs
               ast = id AST.:= op loc aTy (map (lastId node) $ argsBs ^..traverse._1)
           return (join (argsBs ^..traverse._1) ++ [Left ast, Right id], (aTy, aSign, aTn))
         convLikeFunc name loc op argsBs attrs n = do
-          when (L.length attrs /= n) $ errMsg (posOf node) $ name ++ " expected " ++ show n ++ " attributes"
-          when (L.length argsBs /= 3) $ errMsg (posOf node) $ name ++ " expected 3 arguments"
+          when (L.length attrs /= n) $ errMsg node $ name ++ " expected " ++ show n ++ " attributes"
+          when (L.length argsBs /= 3) $ errMsg node $ name ++ " expected 3 arguments"
           unless (all (\case
                        AST.MemRefType{} -> True
                        _ -> False) (argsBs ^..traverse._2._1)) $
-                errMsg (posOf node) $ name ++ " expected array as arguments"
+                errMsg node $ name ++ " expected array as arguments"
           id0 <- freshName
           id1 <- freshName
           id2 <- freshName
@@ -1272,14 +1272,14 @@ transExpr (CUnary CIndOp e node) = do
 -- translate &v
 transExpr adr@(CUnary CAdrOp (CVar ident _) node) = do
   let name = identName ident
-  (id, (ty, sign, tn), isAssignable)  <- lookupVar (posOf node) name
-  unless isAssignable $ errMsg (posOf node) "& only support lvalue"
+  (id, (ty, sign, tn), isAssignable)  <- lookupVar node name
+  unless isAssignable $ errMsg node "& only support lvalue"
   return ([Right id], (AST.MemRefType [Nothing] ty Nothing Nothing, sign, tn))
 
 -- translate struct member access
 transExpr m@(CMember e ident _ node) = do
   (eBs, (eTy, eSign, eTn)) <- transExpr e
-  (index, (resTy, resSign, resTn)) <- calcStructFieldIndex (posOf node) eTn ident
+  (index, (resTy, resSign, resTn)) <- calcStructFieldIndex node eTn ident
   id0 <- freshName
   id1 <- freshName
   let loc = getPos node
@@ -1319,7 +1319,7 @@ transExpr (CAlignofExpr e node) = do
 transExpr e = unsupported e
 
 -- | calculate struct's field index
-calcStructFieldIndex :: Position -> Maybe SUERef -> Ident -> EnvM (Int, SType)
+calcStructFieldIndex :: NodeInfo -> Maybe SUERef -> Ident -> EnvM (Int, SType)
 calcStructFieldIndex pos ref field = do
   let fn = identName field
   when (isn't _Just ref) $ errMsg pos "unknown struct "
@@ -1385,7 +1385,7 @@ exprToAffineExpr _ _ _ _ = Nothing
 -- | Translate a constant expression
 transConst :: CConstant NodeInfo -> EnvM ([BindingOrName], SType)
 transConst (CIntConst i node) = transInt i (getPos node)
-transConst (CCharConst c node) = transChar (posOf node) c (getPos node)
+transConst (CCharConst c node) = transChar node c (getPos node)
 transConst (CFloatConst f node) = transFloat f (getPos node)
 transConst (CStrConst s node) = transStr s (getPos node)
 
@@ -1408,7 +1408,7 @@ transInt (CInteger i _ flag) loc = do
   return ([Left $ id AST.:= Arith.Constant loc ty (AST.IntegerAttr ty (fromIntegral i))], (ty, sign, Nothing))
 
 -- | Translate a char literal
-transChar :: Position -> CChar -> AST.Location -> EnvM ([BindingOrName], SType)
+transChar :: NodeInfo -> CChar -> AST.Location -> EnvM ([BindingOrName], SType)
 transChar pos (CChar c _) loc = do
   id <- freshName
   let ty = AST.IntegerType AST.Signless 8
@@ -1482,7 +1482,7 @@ varName :: VarName -> String
 varName (VarName ident _) = identName ident
 varName NoName = ""
 
-type_ :: Position -> Int -> Type -> EnvM SType
+type_ :: NodeInfo -> Int -> Type -> EnvM SType
 type_ pos ms (FunctionType ty attrs) = f ty
   where f (FunType resType argTypes _) = do
           ps <- mapM (fmap (^. _2 . _1) . paramDecl pos) argTypes
@@ -1550,13 +1550,13 @@ structType :: Int -> CompType -> EnvM SType
 structType ms t@(CompType ref StructTag members attrs node) = do
   mTypes <- mapM (\case
                     m@(MemberDecl decl e node) -> do
-                      d <- varDecl (posOf node) decl
+                      d <- varDecl node decl
                       case d of
                         (_, (AST.MemRefType{}, _, _)) -> unsupported m
                         _ -> return d
                     t -> unsupported t) members
   when (L.length (L.foldl' (\s t -> if null s then [t] else if head s ^._2._1 /= t ^._2._1 then t:s else s) [] mTypes) /= 1) $
-    errMsg (posOf node) "currently struct only supports all fields with same type"
+    errMsg node "currently struct only supports all fields with same type"
   return (AST.MemRefType [Just $ L.length mTypes] (head mTypes ^._2._1) Nothing Nothing, False, Just ref)
 structType _ t = unsupported t
 
@@ -1564,7 +1564,7 @@ getExtVectorAttrs :: Attributes -> [Int]
 getExtVectorAttrs attrs = [fromIntegral $ fromJust $ intValue e| (Attr ident [e] node) <- attrs,
                           identName ident == "__ext_vector_type__" && isn't _Nothing (intValue e)]
 
-arraySize :: Position -> ArraySize -> EnvM (Maybe Int)
+arraySize :: NodeInfo -> ArraySize -> EnvM (Maybe Int)
 arraySize pos (UnknownArraySize static) =
   errMsg pos "unsupported dynamic array size"
 arraySize pos (ArraySize static expr) =
@@ -1572,14 +1572,14 @@ arraySize pos (ArraySize static expr) =
     Just e -> return $ Just $ fromIntegral e
     Nothing -> errMsg pos "unsupported dynamic array size"
 
-paramDecl :: Position -> ParamDecl -> EnvM (String, SType)
+paramDecl :: NodeInfo -> ParamDecl -> EnvM (String, SType)
 paramDecl pos (ParamDecl var _) = varDecl pos var
 paramDecl pos (AbstractParamDecl var _) = varDecl pos var
 
-varDecl :: Position -> VarDecl -> EnvM (String, SType)
+varDecl :: NodeInfo -> VarDecl -> EnvM (String, SType)
 varDecl pos v@(VarDecl name attrs ty) = (varName name,) <$> type_ pos (memorySpace v) ty
 
-params :: Position -> VarDecl -> EnvM [(String, SType)]
+params :: NodeInfo -> VarDecl -> EnvM [(String, SType)]
 params pos (VarDecl name attr ty) = f ty
   where f (FunctionType ty attrs) = ps ty
         f _ = errMsg pos $ "unsupported: " ++ show ty
