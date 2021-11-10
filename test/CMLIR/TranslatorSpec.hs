@@ -2636,3 +2636,28 @@ module  {
   }
 }
       |]
+
+    it "can translate tanspose" $ do
+      [r|
+void foo() {
+    int a[10][20][30];
+    transpose(a, 1, 0, 2); 
+}
+      |] `shouldBeTranslatedAs` [r|
+module  {
+  func @foo() attributes {llvm.emit_c_interface} {
+    %0 = memref.alloca() : memref<10x20x30xi32>
+    %c1_i32 = arith.constant 1 : i32
+    %c0_i32 = arith.constant 0 : i32
+    %c2_i32 = arith.constant 2 : i32
+    %c0 = arith.constant 0 : index
+    %c0_0 = arith.constant 0 : index
+    %c0_1 = arith.constant 0 : index
+    %1 = vector.load %0[%c0, %c0_0, %c0_1] : memref<10x20x30xi32>, vector<10x20x30xi32>
+    %2 = vector.transpose %1, [1, 0, 2] : vector<10x20x30xi32> to vector<20x10x30xi32>
+    %3 = memref.reinterpret_cast %0 to offset: [0], sizes: [20, 10, 30], strides: [300, 30, 1] : memref<10x20x30xi32> to memref<20x10x30xi32>
+    vector.store %2, %3[%c0, %c0_0, %c0_1] : memref<20x10x30xi32>, vector<20x10x30xi32>
+    return
+  }
+}
+      |]

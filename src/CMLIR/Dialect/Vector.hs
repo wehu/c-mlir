@@ -26,4 +26,16 @@ vstore loc v dst indices = Operation
   , opAttributes = NoAttrs
   }
 
+vtranspose :: Location -> Type -> Name -> [Int] -> Operation 
+vtranspose loc ty v transp = Operation
+  { opName = "vector.transpose"
+  , opLocation = loc
+  , opResultTypes = Explicit [ty]
+  , opOperands = [v]
+  , opRegions = []
+  , opSuccessors = []
+  , opAttributes = namedAttribute "transp" 
+                      (ArrayAttr $ IntegerAttr (IntegerType Signless 64) . fromIntegral <$> transp)
+  }
+
 

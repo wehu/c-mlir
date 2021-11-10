@@ -194,6 +194,14 @@ isStaticShapeMemref ty =
     (AST.MemRefType ds ty _ _) | all (isn't _Nothing) ds -> True
     _ -> False
 
+isMemref ty = case ty of
+                AST.MemRefType{} -> True
+                _ -> False
+
+isI8Memref ty = case ty of
+                  (AST.MemRefType [_] (AST.IntegerType AST.Signless 8) _ _) -> True
+                  _ -> False
+
 -- | generate affine.apply based on expression
 applyAffineExpr :: AST.Location
                    -> M.Map String (Int, BU.ByteString)
@@ -781,7 +789,7 @@ transExpr (CIndex e index node) = do
   id1 <- freshName
   ld <- if isAssignable
         then ([Left $ id0 AST.:= constIndex0 (getPos node)
-              ,Left $ id1 AST.:= Affine.load (getPos node) srcTy srcId [id0]] ++) <$> 
+              ,Left $ id1 AST.:= Affine.load (getPos node) srcTy srcId [id0]] ++) <$>
                 tryLoad (getPos node) ty srcTy id id1 indices
         else tryLoad (getPos node) ty srcTy id srcId indices
   return (srcBs ++ ld ++ [Right id], (ty, sign, srcTn))
@@ -799,7 +807,7 @@ transExpr (CIndex e index node) = do
             let es = map fromJust affineExprs ^..traverse._1
             indBs <- mapM (applyAffineExpr loc ds syms) es
             return $ join (indexBs ^.. traverse . _1) ++
-                      toIndices ^.. traverse . _1 ++ join indBs ++ 
+                      toIndices ^.. traverse . _1 ++ join indBs ++
                        [Left $ id AST.:= Affine.load loc ty srcId (map (lastId (posOf node)) indBs)]
           else
             return $ join (indexBs ^.. traverse . _1) ++
@@ -853,7 +861,7 @@ transExpr c@(CCast ty (CIndex e index _) node) = do
                                 [([offset], stride) | offset <- offsetsBs^..traverse._1|stride <- srcStridesBs]
           let dstSizes = map fromJust (AST.memrefTypeShape dstTy)
               dstStrides = L.foldl' (\s i -> i * head s : s) [1] $ reverse $ tail dstSizes
-          dstStridesBs <- mapM (\s -> (\id -> [Left $ id AST.:= constInt loc AST.IndexType s]) <$> freshName) dstStrides 
+          dstStridesBs <- mapM (\s -> (\id -> [Left $ id AST.:= constInt loc AST.IndexType s]) <$> freshName) dstStrides
           let rank = L.length dstSizes
               layout = AST.AffineMapAttr (Affine.Map rank rank
                             [L.foldl' Affine.Add (Affine.Add (Affine.Dimension (rank-1)) (Affine.Symbol 0))
@@ -862,7 +870,9 @@ transExpr c@(CCast ty (CIndex e index _) node) = do
               v = id AST.:= MemRef.reinterpretCast loc resTy srcId
                                 [lastId (posOf node) (head offsetBs)] [] (map (lastId (posOf node)) $ init dstStridesBs)
                                 [minBound] dstSizes (map (const minBound) (init dstStrides) ++ [last dstStrides])
-          return (join (offsets ^..traverse._1) ++ (offsetsBs ^..traverse._1) ++ join srcDims ++ join (reverse srcStridesBs) ++ join (reverse offsetBs) ++ join dstStridesBs ++ [Left v], resTy)
+          return (join (offsets ^..traverse._1) ++ (offsetsBs ^..traverse._1) ++
+                  join srcDims ++ join (reverse srcStridesBs) ++
+                  join (reverse offsetBs) ++ join dstStridesBs ++ [Left v], resTy)
 
 -- translate casting experssion
 transExpr c@(CCast t e node) = do
@@ -889,7 +899,7 @@ transExpr c@(CCast t e node) = do
           | isInt srcTy && isFloat dstTy && bits srcTy == bits dstTy =
             return [Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc (floatTy $ bits srcTy) srcId]
           | isInt srcTy && isFloat dstTy =
-            return [Left $ id AST.:= (if bits srcTy > bits dstTy then Arith.TruncI 
+            return [Left $ id AST.:= (if bits srcTy > bits dstTy then Arith.TruncI
                                       else (if srcSign then Arith.ExtSI else Arith.ExtUI)) loc (AST.IntegerType AST.Signless (bits dstTy)) srcId
                    ,Left $ dstId AST.:= (if srcSign then Arith.SIToFP else Arith.UIToFP) loc dstTy id]
           | isI8Memref srcTy && isMemref dstTy = do
@@ -960,12 +970,6 @@ transExpr c@(CCast t e node) = do
         isInt ty = case ty of
                      AST.IntegerType _ _ -> True
                      _ -> False
-        isMemref ty = case ty of
-                        AST.MemRefType{} -> True
-                        _ -> False
-        isI8Memref ty = case ty of
-                          (AST.MemRefType [_] (AST.IntegerType AST.Signless 8) _ _) -> True
-                          _ -> False
         bits ty = case ty of
                     AST.Float16Type -> 16
                     AST.Float32Type -> 32
@@ -1096,6 +1100,28 @@ transExpr c@(CCall (CVar ident _) args node) = do
     "conv_2d_nchw_fchw" -> convLikeFunc name loc Linalg.conv2dNchwFchw (take 3 argsBs) (getAttributes name (drop 3 args)) 4
     "conv_2d_nhwc_hwcf" -> convLikeFunc name loc Linalg.conv2dNhwcHwcf (take 3 argsBs) (getAttributes name (drop 3 args)) 4
     "conv_2d" -> convLikeFunc name loc Linalg.conv2d argsBs [] 0
+    "transpose" -> do
+      when (null argsBs) $ errMsg (posOf node) "transpose expected >= 1 arguments"
+      let (mB, (mTy, mSign, mTn)) = head argsBs
+      unless (isStaticShapeMemref mTy) $ errMsg (posOf node) "transpose expected a array as argument"
+      when (isJust $ AST.memrefTypeLayout mTy) $ errMsg (posOf node) "transpose's src type should not has affine map"
+      indicesBs <- mapM (\_-> (\id -> [Left $ id AST.:= constIndex0 loc]) <$> freshName) [0..L.length (AST.memrefTypeShape mTy)-1]
+      id0 <- freshName
+      id1 <- freshName
+      id2 <- freshName
+      let permute = map intValue $ tail args
+      when (L.length permute /= L.length (AST.memrefTypeShape mTy)) $ errMsg (posOf node) "permute mismatch with shape"
+      when (any (isn't _Just) permute) $ errMsg (posOf node) "transpose expected constant int as permute"
+      let vTy = AST.VectorType (map fromJust (AST.memrefTypeShape mTy)) (AST.memrefTypeElement mTy)
+          v = id0 AST.:= Vector.vload loc vTy (lastId (posOf node) mB) (map (lastId (posOf node)) indicesBs)
+          shape = [AST.memrefTypeShape mTy !! fromIntegral (fromJust i) | i <- permute]
+          vecTy = AST.VectorType (map fromJust shape) (AST.memrefTypeElement mTy)
+          transp = id1 AST.:= Vector.vtranspose loc vecTy id0 (map (fromIntegral.fromJust) permute)
+          dstTy = mTy{AST.memrefTypeShape=shape}
+          dstM = id2 AST.:= MemRef.reinterpretCast loc dstTy (lastId (posOf node) mB) [] [] [] [0] (map fromJust shape)
+                      (L.foldl' (\s i -> i*head s:s) [1] $ reverse $ tail $ map fromJust shape)
+          st = AST.Do $ Vector.vstore loc id1 id2 (map (lastId (posOf node)) indicesBs)
+      return (join (argsBs ^..traverse._1) ++ join indicesBs ++ [Left v, Left transp, Left dstM, Left st, Right id2], (dstTy, mSign, mTn))
     "matmul" -> convLikeFunc name loc Linalg.matmul argsBs [] 0
     "abs"   -> builtinFunc name loc id Math.abs argsBs 1
     "atan2" -> builtinFunc name loc id Math.atan2 argsBs 2
