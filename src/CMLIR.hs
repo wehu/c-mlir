@@ -6,10 +6,10 @@ module CMLIR
 import Data.List
 import Options.Applicative
 import System.Environment
+import System.IO
+import System.Exit
 import CMLIR.Parser
 import CMLIR.Translator
-import System.IO
-import System.Exit (exitWith, ExitCode (ExitFailure))
 
 specialOpts = ["-jit", "-llvm", "-loc", "-noopt"]
 
@@ -18,10 +18,11 @@ translate =
   do args <- getArgs
      let (cppOpts', files) = partition (isPrefixOf "-") args
          (jits, cppOpts) = partition (isPrefixOf "-jit=") cppOpts'
-         trOpts = defaultOptions{toLLVM = "-llvm" `elem` cppOpts || not (null jits),
-                                 dumpLoc = "-loc" `elem` cppOpts,
+         hasOpt opt = opt `elem` cppOpts 
+         trOpts = defaultOptions{toLLVM = hasOpt "-llvm" || not (null jits),
+                                 dumpLoc = hasOpt "-loc",
                                  jits = map (drop 5) jits,
-                                 simplize = "-noopt" `notElem` cppOpts} 
+                                 simplize = not $ hasOpt "-noopt"} 
      mapM_ (\file -> do
        tu <- processFile (cppOpts \\ specialOpts) file
        ir <- translateToMLIR trOpts tu

@@ -17,7 +17,11 @@ shouldBeTranslatedAs code ir = do
   let ast = processString code
   output <- case ast of
               Left errs -> return $ show errs
-              Right ast -> translateToMLIR defaultOptions{simplize=False} ast
+              Right ast -> do
+                ir <- translateToMLIR defaultOptions{simplize=False} ast
+                case ir of
+                  Left err -> return err
+                  Right ir -> return ir
   removeEmptyLines (BU.fromString output) `shouldBe` removeEmptyLines ir
   where removeEmptyLines s = 
           BS.intercalate "\n" [l | l <- BS.split (fromIntegral $ ord '\n') s, 
