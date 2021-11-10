@@ -211,8 +211,9 @@ defaultOptions = Options {toLLVM = False, dumpLoc = False, jits = [], simplize =
 -- | Translate c AST to MLIR
 translateToMLIR :: Options -> CTranslUnit -> IO (Either String String)
 translateToMLIR opts tu = do
-  MLIR.withContext (\ctx -> do
-    MLIR.registerAllDialects ctx
+  evalContT $ do
+    ctx <- ContT MLIR.withContext
+    liftIO $ MLIR.registerAllDialects ctx
     let res = runTrav initEnv $ do
              -- analyze globals
              withExtDeclHandler (analyseAST tu) handlers
@@ -232,7 +233,7 @@ translateToMLIR opts tu = do
              return (AST.ModuleOp $ AST.Block id [] (join ds ++ fs), fds)
     case res of
       Left errs -> return $ Left $ show errs
-      Right ((ast, fs), _) -> do 
+      Right ((ast, fs), _) -> liftIO $ do 
         nativeOp <- AST.fromAST ctx (mempty, mempty) ast
         check <- do
                    -- run passes to llvm ir
@@ -287,7 +288,7 @@ translateToMLIR opts tu = do
           else
             Right . BU.toString <$> (if dumpLoc opts then MLIR.showOperationWithLocation
                                      else MLIR.showOperation) nativeOp
-        else return $ Left "mlir conversion failed")
+        else return $ Left "mlir conversion failed"
 
 sizeOfType :: AST.Type -> (AST.Type, Int, Int)
 sizeOfType ty@(AST.IntegerType _ s) = (ty, ceiling (fromIntegral s/8), 1)
