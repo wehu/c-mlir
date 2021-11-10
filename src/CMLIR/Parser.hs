@@ -1,4 +1,4 @@
-module CMLIR.Parser where
+module CMLIR.Parser (processFile, processString) where
 
 import Language.C
 import Language.C.Analysis.AstAnalysis

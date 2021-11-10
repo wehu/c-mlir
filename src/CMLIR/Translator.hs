@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TupleSections #-}
-module CMLIR.Translator where
+module CMLIR.Translator (Options(..), defaultOptions, translateToMLIR) where
 
 import qualified MLIR.AST.Builder as AST
 import qualified MLIR.AST as AST
