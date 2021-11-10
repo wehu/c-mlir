@@ -144,7 +144,7 @@ unsupported :: (Pretty a, Pos a) => a -> EnvM b
 unsupported a = throwTravError $ unsupportedFeature (show (pretty a)) a
 
 errMsg :: NodeInfo -> String -> EnvM b
-errMsg pos s = throwTravError $ userErr $ "error:\n" ++ s ++ "@" ++ show (posOf pos)
+errMsg node s = throwTravError $ mkErrorInfo LevelFatal s node
 
 --------------------------------------------------------------------------
 -- AST translators
@@ -384,7 +384,7 @@ transBlock args _ s _ = unsupported s
 -- | Translate a statement in block
 transBlockItem :: CCompoundBlockItem NodeInfo -> EnvM [BindingOrName]
 transBlockItem (CBlockStmt s) = transStmt s
-transBlockItem (CBlockDecl (CDecl q ds node)) = do
+transBlockItem (CBlockDecl dd@(CDecl q ds node)) = do
   join <$> mapM (\d -> do
     case d of
       (Just decl, _, _) -> do
@@ -392,7 +392,7 @@ transBlockItem (CBlockDecl (CDecl q ds node)) = do
         case objDef of
           Just objDef -> transLocalDecl objDef
           Nothing -> errMsg node $ "cannot find " ++ show decl
-      _ -> errMsg node $ "unsupported " ++ show d) ds
+      _ -> unsupported dd) ds
 transBlockItem s = unsupported s
 
 -- | Translate a local variable declaration
