@@ -1527,8 +1527,8 @@ type_ pos ms ty@(DirectType name quals attrs) = do
     _ -> unsupported pos ty
 type_ pos ms ty@(PtrType t quals attrs) = do
   (tt, sign, tn) <- type_ pos ms t
-  when (tt == AST.NoneType) $ unsupported pos ty
-  return (AST.MemRefType [Nothing] tt Nothing (Just $ AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms), sign, tn)
+  return (if tt == AST.NoneType then AST.IntegerType AST.Signless 8
+          else AST.MemRefType [Nothing] tt Nothing (Just $ AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms), sign, tn)
 type_ pos ms (ArrayType t size quals attrs) = do
   let s = arraySize pos size
       msAttr = AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms
