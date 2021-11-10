@@ -40,6 +40,7 @@ import Language.C.Syntax.Constants
 import Language.C.Data.Ident
 import Language.C.Data.Node
 import Language.C.Data.Position
+import Language.C.Data.Error
 import Language.C.Pretty
 import Control.Monad
 import Control.Monad.Trans.Cont
@@ -116,12 +117,6 @@ underScope action = do
 addLabel name label =
    modifyUserState (\s -> s{labels=M.insert name label (labels s)})
 
-lookupLabel pos name = do
-  l <- M.lookup name <$> getUserState
-  case l of
-    Just l -> return l
-    Nothing -> errMsg pos $ "cannot find label " ++ name
-
 addVar name v =
   modifyUserState (\s -> s{vars=M.insert name v (vars s)})
 
@@ -146,23 +141,23 @@ freshName = do
   modifyUserState (\s -> s{idCounter = idCounter s + 1})
   return $ BU.fromString $ show id
 
-unsupported :: (Pretty a) => Position -> a -> b
-unsupported pos a = error $ "unsupported:\n" ++ show (pretty a) ++ "@" ++ show pos
+unsupported :: (Pretty a) => Position -> a -> EnvM b
+unsupported pos a = throwTravError $ userErr $ "unsupported:\n" ++ show (pretty a) ++ "@" ++ show pos
 
-errMsg :: Position -> String -> b
-errMsg pos s = error $ "error:\n" ++ s ++ "@" ++ show pos
+errMsg :: Position -> String -> EnvM b
+errMsg pos s = throwTravError $ userErr $ "error:\n" ++ s ++ "@" ++ show pos
 
 --------------------------------------------------------------------------
 -- AST translators
 
 -- | Helper to get the binding id
 lastId :: Position -> [BindingOrName] -> BU.ByteString
-lastId pos [] = errMsg pos "no intruction"
+lastId pos [] = error $ "no intruction@" ++ show pos
 lastId pos bs =
   case last bs of
     Left (n AST.:= v) -> n
     Right n -> n
-    Left e -> errMsg pos "unsupported"
+    Left e -> error $ "unsupported@" ++ show pos
 
 -- | Helper to create constant zero
 constIndex0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
@@ -284,7 +279,7 @@ translateToMLIR opts tu = do
                     return (MLIR.SomeStorable structPtr, vec)
                   _ -> do
                     vec@(V.MVector _ fptr) <- V.unsafeThaw $ V.iterateN 0 (+1) (1 :: Int8)
-                    return (MLIR.SomeStorable (0::Int64), vec) -- error "only support memref type in argument for jit"
+                    return (MLIR.SomeStorable (0::Int64), vec)
           inputs <- mapM buffer argSizes
           (Just eng) <- ContT $ MLIR.withExecutionEngine m
           name <- ContT $ MLIR.withStringRef (BU.fromString fn)
@@ -434,8 +429,8 @@ transLocalDecl d@(ObjDef var@(VarDecl name attrs orgTy) init node) = do
   st <- if isn't _Nothing initBs && not isConst then do
           -- initialize local variable
           (^._1) <$> foldM (\(s, index) initBs -> do
-                       let ds = case mt of
-                                  (AST.MemRefType ds _ _ _) -> ds
+                       ds <- case mt of
+                                  (AST.MemRefType ds _ _ _) -> return ds
                                   _ -> unsupported (posOf node) d
                        let shape = ds ^..traverse.non 1
                            strides = tail $ L.foldl' (\s i -> (i*head s):s) [1] (reverse shape)
@@ -508,12 +503,12 @@ transStmt (CFor (Right (CDecl [CTypeSpec (CIntType _)]
   exprs <- affineExprs <$> getUserState
   let name = identName ident0
       loc = getPos node
-      step = case stepE of
-              (CAssign CAddAssOp (CVar ident2 _) step _) -> step
+  step <- case stepE of
+              (CAssign CAddAssOp (CVar ident2 _) step _) -> return step
               (CUnary op (CVar ident2 _) _) | op == CPostIncOp || op == CPreIncOp ->
-                CConst (CIntConst (cInteger 1) node)
+                return $ CConst (CIntConst (cInteger 1) node)
               _ -> unsupported (posOf stepE) stepE
-      lbAE = exprToAffineExpr ds syms exprs lb
+  let lbAE = exprToAffineExpr ds syms exprs lb
       ubAE = exprToAffineExpr ds syms exprs ub
   if isn't _Nothing lbAE && isn't _Nothing ubAE then do
     lbInd <- applyAffineExpr loc ds syms $ fromJust lbAE ^._1
@@ -670,8 +665,8 @@ transExpr a@(CAssign op lhs rhs node) = do
         op1 = AST.Do st{AST.opLocation = getPos node}
     return (srcBs ++ rhsBs ++ c0 ++ [Left op1], ty)
   else do
-    let (dstTy, sign, tn) = case ty of
-                  (AST.MemRefType _ ty _ _, sign, tn) -> (ty, sign, tn)
+    (dstTy, sign, tn) <- case ty of
+                  (AST.MemRefType _ ty _ _, sign, tn) -> return (ty, sign, tn)
                   _ -> unsupported (posOf src) src
     id0 <- freshName
     id1 <- freshName
@@ -778,8 +773,8 @@ transExpr (CIndex e index node) = do
      case src of
        CVar ident _ -> (\(a, b, c) -> (a, b, [],c)) <$> lookupVar (posOf node) (identName ident)
        _ -> (\(a, b) -> (lastId (posOf node) a, b, a, False)) <$> transExpr src
-  let ty = case srcTy of
-             AST.MemRefType _ ty _ _ -> ty
+  ty <- case srcTy of
+             AST.MemRefType _ ty _ _ -> return ty
              _ -> unsupported (posOf src) src
   id <- freshName
   id0 <- freshName
@@ -963,7 +958,7 @@ transExpr c@(CCast t e node) = do
                          16 -> AST.Float16Type
                          32 -> AST.Float32Type
                          64 -> AST.Float64Type
-                         _ -> unsupported (posOf c) c
+                         _ -> AST.Float32Type
         isInt ty = case ty of
                      AST.IntegerType _ _ -> True
                      _ -> False
@@ -972,7 +967,7 @@ transExpr c@(CCast t e node) = do
                     AST.Float32Type -> 32
                     AST.Float64Type -> 64
                     AST.IntegerType _ bs -> bs
-                    _ -> unsupported (posOf c) c
+                    _ -> 32
 
 -- translate builtin dma_start
 transExpr c@(CCall (CVar ident _) [src', dst', tag', size] node) | identName ident == "dma_start" = do
@@ -1048,8 +1043,8 @@ transExpr c@(CCall (CVar ident _) [src', dst] node) | identName ident == "vload"
   indexBs <- mapM transExpr indices
   toIndex <- mapM (\(b, (ty, _, _)) -> toIndex loc (lastId (posOf node) b) ty) indexBs
   (dstBs, (dstTy, dstSign, dstTn)) <- transExpr dst
-  let ty = case dstTy of
-             AST.MemRefType [Nothing] t _ _ -> t
+  ty <- case dstTy of
+             AST.MemRefType [Nothing] t _ _ -> return t
              _ -> errMsg (posOf node) "vload expected a pointer to vector type"
   id <- freshName
   id0 <- freshName
@@ -1095,10 +1090,16 @@ transExpr c@(CCall (CVar ident _) args node) = do
       return (join (argsBs ^..traverse._1) ++ [Left copy], (dstTy, dstSign, dstTn))
 
     -- convolution
-    "conv_1d_nwc_wcf" -> convLikeFunc name loc Linalg.conv1dNwcWcf (take 3 argsBs) (getAttributes name (drop 3 args)) 2
+    "conv_1d_nwc_wcf" -> do
+      attrs <- getAttributes name (drop 3 args)
+      convLikeFunc name loc Linalg.conv1dNwcWcf (take 3 argsBs) attrs 2
     "conv_1d" -> convLikeFunc name loc Linalg.conv1d argsBs [] 0
-    "conv_2d_nchw_fchw" -> convLikeFunc name loc Linalg.conv2dNchwFchw (take 3 argsBs) (getAttributes name (drop 3 args)) 4
-    "conv_2d_nhwc_hwcf" -> convLikeFunc name loc Linalg.conv2dNhwcHwcf (take 3 argsBs) (getAttributes name (drop 3 args)) 4
+    "conv_2d_nchw_fchw" -> do
+      attrs <- getAttributes name (drop 3 args)
+      convLikeFunc name loc Linalg.conv2dNchwFchw (take 3 argsBs) attrs 4
+    "conv_2d_nhwc_hwcf" -> do
+      attrs <- getAttributes name (drop 3 args)
+      convLikeFunc name loc Linalg.conv2dNhwcHwcf (take 3 argsBs) attrs 4
     "conv_2d" -> convLikeFunc name loc Linalg.conv2d argsBs [] 0
 
     -- matmul
@@ -1151,14 +1152,14 @@ transExpr c@(CCall (CVar ident _) args node) = do
     -- normal function call
     _ -> do
       (_, (ty, sign, tn), _) <- lookupVar (posOf node) name
-      let resTy = case ty of
-                    AST.FunctionType _ resTy -> resTy
+      resTy <- case ty of
+                    AST.FunctionType _ resTy -> return resTy
                     _ -> errMsg (posOf node) "expected a function type"
       let call = id AST.:= Std.call loc resTy (BU.fromString name) (map (lastId (posOf node)) $ argsBs ^..traverse._1)
       return (join (argsBs ^..traverse._1) ++ [Left call, Right id], (if null resTy then AST.NoneType else head resTy, sign, tn))
   where getAttributes name args =
-          map (\v -> case intValue v of
-                               Just v -> fromIntegral v
+          mapM (\v -> case intValue v of
+                               Just v -> return $ fromIntegral v
                                Nothing -> errMsg (posOf node) $ name ++ " expected int constant " ++ show v) args
         builtinFunc name loc id op argsBs n = do
           when (L.length argsBs /= n) $ errMsg (posOf node) $ name ++ " expected " ++ show n ++ " arguments"
@@ -1262,10 +1263,10 @@ transExpr (CUnary CIndOp e node) = do
   id <- freshName
   id0 <- freshName
   let loc = getPos node
-      (resTy, ms) = case eTy of
-                AST.MemRefType [Nothing] t _ ms -> (t, ms)
+  (resTy, ms) <- case eTy of
+                AST.MemRefType [Nothing] t _ ms -> return (t, ms)
                 _ -> unsupported (posOf node) e
-      bs = [Left $ id0 AST.:= constIndex0 loc
+  let bs = [Left $ id0 AST.:= constIndex0 loc
            ,Left $ id AST.:= Affine.load loc resTy (lastId (posOf node) eBs) [id0]]
   return (eBs ++ bs ++ [Right id], (resTy, eSign, eTn))
 
@@ -1379,7 +1380,7 @@ exprToAffineExpr ds syms exprs (CBinary op lhs rhs node)
   else return ((case op of
               CRmdOp -> Affine.Mod
               CDivOp -> Affine.FloorDiv
-              _ -> unsupported (posOf node) op) l r, inferDsc lDsc rDsc)
+              _ -> Affine.Mod) l r, inferDsc lDsc rDsc)
 exprToAffineExpr _ _ _ _ = Nothing
 
 -- | Translate a constant expression
@@ -1527,8 +1528,8 @@ type_ pos ms ty@(PtrType t quals attrs) = do
   return (if tt == AST.NoneType then AST.IntegerType AST.Signless 8
           else AST.MemRefType [Nothing] tt Nothing (Just $ AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms), sign, tn)
 type_ pos ms (ArrayType t size quals attrs) = do
-  let s = arraySize pos size
-      msAttr = AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms
+  s <- arraySize pos size
+  let msAttr = AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms
   mt <- type_ pos ms t
   case mt of
     (AST.MemRefType sizes t attrs ms, sign, tn) | all (isn't _Nothing) sizes ->
@@ -1564,12 +1565,12 @@ getExtVectorAttrs :: Attributes -> [Int]
 getExtVectorAttrs attrs = [fromIntegral $ fromJust $ intValue e| (Attr ident [e] node) <- attrs,
                           identName ident == "__ext_vector_type__" && isn't _Nothing (intValue e)]
 
-arraySize :: Position -> ArraySize -> Maybe Int
+arraySize :: Position -> ArraySize -> EnvM (Maybe Int)
 arraySize pos (UnknownArraySize static) =
   errMsg pos "unsupported dynamic array size"
 arraySize pos (ArraySize static expr) =
   case intValue expr of
-    Just e -> Just $ fromIntegral e
+    Just e -> return $ Just $ fromIntegral e
     Nothing -> errMsg pos "unsupported dynamic array size"
 
 paramDecl :: Position -> ParamDecl -> EnvM (String, SType)
