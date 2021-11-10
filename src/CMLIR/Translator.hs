@@ -57,9 +57,6 @@ import qualified Data.Map as M
 import System.Exit
 import Debug.Trace
 import Foreign (withForeignPtr)
-import Foreign.Storable
-import Foreign.Ptr
-import Foreign.Marshal.Alloc
 
 type SType = (AST.Type, Bool, Maybe SUERef)
 
