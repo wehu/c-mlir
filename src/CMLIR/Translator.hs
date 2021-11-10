@@ -1078,6 +1078,7 @@ transExpr c@(CCall (CVar ident _) args node) = do
   argsBs <- mapM transExpr args
   id <- freshName
   case name of
+    -- builtin functions
     "malloc" -> do
       let resTy = AST.MemRefType [Nothing] (AST.IntegerType AST.Signless 8) Nothing Nothing
           (sizeB, (sizeTy, sizeSign, sizeTn)) = head argsBs
@@ -1095,11 +1096,16 @@ transExpr c@(CCall (CVar ident _) args node) = do
           (srcB, (srcTy, srcSign, srcTn)) = argsBs !! 1
           copy = AST.Do $ MemRef.copy loc (lastId (posOf node) srcB) (lastId (posOf node) dstB)
       return (join (argsBs ^..traverse._1) ++ [Left copy], (dstTy, dstSign, dstTn))
+
+    -- convolution
     "conv_1d_nwc_wcf" -> convLikeFunc name loc Linalg.conv1dNwcWcf (take 3 argsBs) (getAttributes name (drop 3 args)) 2
     "conv_1d" -> convLikeFunc name loc Linalg.conv1d argsBs [] 0
     "conv_2d_nchw_fchw" -> convLikeFunc name loc Linalg.conv2dNchwFchw (take 3 argsBs) (getAttributes name (drop 3 args)) 4
     "conv_2d_nhwc_hwcf" -> convLikeFunc name loc Linalg.conv2dNhwcHwcf (take 3 argsBs) (getAttributes name (drop 3 args)) 4
     "conv_2d" -> convLikeFunc name loc Linalg.conv2d argsBs [] 0
+
+    -- matmul
+    "matmul" -> convLikeFunc name loc Linalg.matmul argsBs [] 0
     "transpose" -> do
       when (null argsBs) $ errMsg (posOf node) "transpose expected >= 1 arguments"
       let (mB, (mTy, mSign, mTn)) = head argsBs
@@ -1122,7 +1128,8 @@ transExpr c@(CCall (CVar ident _) args node) = do
                       (L.foldl' (\s i -> i*head s:s) [1] $ reverse $ tail $ map fromJust shape)
           st = AST.Do $ Vector.vstore loc id1 id2 (map (lastId (posOf node)) indicesBs)
       return (join (argsBs ^..traverse._1) ++ join indicesBs ++ [Left v, Left transp, Left dstM, Left st, Right id2], (dstTy, mSign, mTn))
-    "matmul" -> convLikeFunc name loc Linalg.matmul argsBs [] 0
+
+    -- math
     "abs"   -> builtinFunc name loc id Math.abs argsBs 1
     "atan2" -> builtinFunc name loc id Math.atan2 argsBs 2
     "atan"  -> builtinFunc name loc id Math.atan argsBs 1
@@ -1143,6 +1150,8 @@ transExpr c@(CCall (CVar ident _) args node) = do
     "sin"   -> builtinFunc name loc id Math.sin argsBs 1
     "sqrt"  -> builtinFunc name loc id Math.sqrt argsBs 1
     "tanh"  -> builtinFunc name loc id Math.tanh argsBs 1
+
+    -- normal function call
     _ -> do
       (_, (ty, sign, tn), _) <- lookupVar (posOf node) name
       let resTy = case ty of
