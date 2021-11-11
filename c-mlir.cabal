@@ -54,7 +54,7 @@ library
     , vector
   default-language: Haskell2010
 
-executable c-mlir-exe
+executable c-mlir
   main-is: Main.hs
   other-modules:
       Paths_c_mlir

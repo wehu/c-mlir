@@ -1,7 +1,7 @@
 name:                c-mlir
 version:             0.1.0.0
 github:              "wehu/c-mlir"
-license:             BSD3
+license:             Apache2.0 
 author:              "wei.hu"
 maintainer:          "wei.hu@enflame-tech.com"
 copyright:           "2021 Wei Hu"
@@ -36,7 +36,7 @@ library:
   source-dirs: src
 
 executables:
-  c-mlir-exe:
+  c-mlir:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
