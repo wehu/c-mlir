@@ -26,8 +26,8 @@ cmdP = CmdOpts
       <$> some (argument str (metavar "FILES..."))
       <*> many (strOption
             ( long "jit"
-            <> metavar "JIT"
-            <> help "Function name to run jit" ))
+            <> metavar "FUNC"
+            <> help "Run jit for specified function" ))
       <*> switch
           ( long "llvm"
          <> help "Lower to llvm or not" )
