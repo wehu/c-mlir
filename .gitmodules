@@ -1,0 +1,3 @@
+[submodule "thirdparty/mlir-hs"]
+	path = thirdparty/mlir-hs
+	url = https://github.com/wehu/mlir-hs.git
