@@ -668,7 +668,7 @@ transExpr a@(CAssign op lhs rhs node) = do
   else do
     (dstTy, sign, tn) <- case ty of
                   (AST.MemRefType _ ty _ _, sign, tn) -> return (ty, sign, tn)
-                  _ -> unsupported src
+                  _ -> unsupported a
     id0 <- freshName
     id1 <- freshName
     st <- if isAssignable
@@ -768,7 +768,7 @@ transExpr (CCond cond (Just lhs) rhs node) = do
           [Left sel, Right id], (lhsTy, lhsSign, lhsTn))
 
 -- translate array index acccess
-transExpr (CIndex e index node) = do
+transExpr ind@(CIndex e index node) = do
   let (src, indices) = collectIndices e [index]
   (srcId, (srcTy, sign, srcTn), srcBs, isAssignable) <-
      case src of
@@ -776,7 +776,7 @@ transExpr (CIndex e index node) = do
        _ -> (\(a, b) -> (lastId node a, b, a, False)) <$> transExpr src
   ty <- case srcTy of
              AST.MemRefType _ ty _ _ -> return ty
-             _ -> unsupported src
+             _ -> unsupported ind
   id <- freshName
   id0 <- freshName
   id1 <- freshName
