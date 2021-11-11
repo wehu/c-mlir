@@ -17,7 +17,9 @@ data CmdOpts = CmdOpts
   , llvm       :: Bool
   , noopt      :: Bool
   , simplize   :: Bool
-  , loc        :: Bool}
+  , loc        :: Bool
+  , defines    :: [String]
+  , includes   :: [String]}
 
 cmdP :: Parser CmdOpts
 cmdP = CmdOpts
@@ -38,6 +40,16 @@ cmdP = CmdOpts
       <*> switch
           ( long "loc"
          <> help "Dump the IR with location" )
+      <*> many (strOption
+             ( long "define"
+            <> short 'D'
+            <> metavar "Define"
+            <> help "Macro defines" ))
+      <*> many (strOption
+             ( long "include"
+            <> short 'I'
+            <> metavar "Include"
+            <> help "Include paths" ))
 
 opts :: ParserInfo CmdOpts
 opts = info (cmdP <**> helper)
@@ -52,8 +64,10 @@ translate =
                                    T.dumpLoc = loc options,
                                    T.jits = jits options,
                                    T.simplize = not $ noopt options} 
+         cppOpts = map ("-D"++) (defines options) ++
+                   map ("-I"++) (includes options)
      mapM_ (\file -> do
-       tu <- processFile [] file
+       tu <- processFile cppOpts file
        ir <- T.translateToMLIR trOpts tu
        case ir of
          Left err -> do
