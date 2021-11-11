@@ -478,15 +478,15 @@ stack run -- test.c
 
 Translate to LLVM IR
 ```shell
-stack run -- test.c -llvm
+stack run -- test.c --llvm
 ```
 
 Dump IR with locations
 ```shell
-stack run -- test.c -loc
+stack run -- test.c --loc
 ```
 
 Jit run
 ```shell
-stack run -- test.c -jit=func_name
+stack run -- test.c --jit=func_name
 ```
