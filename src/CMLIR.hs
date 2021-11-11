@@ -2,7 +2,7 @@ module CMLIR
     ( translate
     ) where
 
-
+import Control.Monad
 import Options.Applicative
 import System.Environment
 import System.IO
@@ -19,7 +19,8 @@ data CmdOpts = CmdOpts
   , simplize   :: Bool
   , loc        :: Bool
   , defines    :: [String]
-  , includes   :: [String]}
+  , includes   :: [String]
+  , outputFile :: String}
 
 cmdP :: Parser CmdOpts
 cmdP = CmdOpts
@@ -43,13 +44,19 @@ cmdP = CmdOpts
       <*> many (strOption
              ( long "define"
             <> short 'D'
-            <> metavar "Define"
+            <> metavar "NAME=VALUE"
             <> help "Macro defines" ))
       <*> many (strOption
              ( long "include"
             <> short 'I'
-            <> metavar "Include"
+            <> metavar "PATH"
             <> help "Include paths" ))
+      <*> strOption
+             ( long "output"
+            <> short 'o'
+            <> metavar "FILE"
+            <> value ""
+            <> help "Output file" )
 
 opts :: ParserInfo CmdOpts
 opts = info (cmdP <**> helper)
@@ -66,6 +73,8 @@ translate =
                                    T.simplize = not $ noopt options} 
          cppOpts = map ("-D"++) (defines options) ++
                    map ("-I"++) (includes options)
+     hOutput <- if null (outputFile options) then return stderr
+                else openFile (outputFile options) WriteMode
      mapM_ (\file -> do
        tu <- processFile cppOpts file
        ir <- T.translateToMLIR trOpts tu
@@ -73,5 +82,6 @@ translate =
          Left err -> do
            hPutStrLn stderr err
            exitWith (ExitFailure 1)
-         Right res -> putStrLn res) (files options)
+         Right res -> hPutStrLn hOutput res) (files options)
+     unless (null $ outputFile options) $ hClose hOutput
 
