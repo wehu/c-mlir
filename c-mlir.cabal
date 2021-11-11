@@ -12,7 +12,7 @@ bug-reports:    https://github.com/wehu/c-mlir/issues
 author:         wei.hu
 maintainer:     wei.hu@enflame-tech.com
 copyright:      2021 Wei Hu
-license:        BSD3
+license:        Apache2
 license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
