@@ -32,7 +32,7 @@ cmdP = CmdOpts
           ( long "llvm"
          <> help "Lower to llvm or not" )
       <*> switch
-          ( long "nopot"
+          ( long "noopt"
          <> help "Do not do any IR optimization" )
       <*> switch
           ( long "simplize"
