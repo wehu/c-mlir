@@ -232,7 +232,7 @@ translateToMLIR opts tu = do
              fds <- funsWithBody <$> getUserState
              return (AST.ModuleOp $ AST.Block id [] (join ds ++ fs), fds)
     case res of
-      Left errs -> return $ Left $ show errs
+      Left errs -> return $ Left $ L.intercalate "\n" $ map show errs
       Right ((ast, fs), _) -> liftIO $ do 
         nativeOp <- AST.fromAST ctx (mempty, mempty) ast
         check <- do
@@ -329,7 +329,7 @@ transGDecl decl@(Decl var node) = do
                    f{AST.opAttributes = AST.opAttributes f <> AST.namedAttribute "cl.kernel" (AST.BoolAttr True)}
                  else f
         return [AST.Do f'{AST.opAttributes=AST.opAttributes f' <> AST.namedAttribute "sym_visibility" (AST.StringAttr "private")}]
-      _ -> unsupported decl
+      _ -> errMsg node "expected function type"
 
 -- | Register all function types into env
 registerFunction :: Decl -> EnvM ()
@@ -1494,7 +1494,9 @@ type_ pos ms (FunctionType ty attrs) = f ty
           rs <- mapM (fmap (^. _1) . type_  pos ms) [resType]
           rt <- type_ pos ms resType
           return (AST.FunctionType ps [t | t <- rs, t /= AST.NoneType], rt ^. _2, rt ^._3)
-        f (FunTypeIncomplete ty) = type_ pos ms ty
+        f (FunTypeIncomplete ty) = do
+          rt <- type_ pos ms ty
+          return (AST.FunctionType [] [t | t <- [rt ^._1], t /= AST.NoneType], rt ^._2, rt ^._3)
 type_ pos ms ty@(DirectType name quals attrs) = do
   md <- machine <$> getUserState
   case name of
