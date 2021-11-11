@@ -151,12 +151,12 @@ errMsg node s = throwTravError $ mkErrorInfo LevelFatal s node
 
 -- | Helper to get the binding id
 lastId :: NodeInfo -> [BindingOrName] -> BU.ByteString
-lastId pos [] = error $ "no intruction@" ++ show (posOf pos)
+lastId pos [] = error $ "no output found@" ++ show (posOf pos)
 lastId pos bs =
   case last bs of
     Left (n AST.:= v) -> n
     Right n -> n
-    Left e -> error $ "unsupported@" ++ show (posOf pos)
+    Left e -> error $ "no output found@" ++ show (posOf pos)
 
 -- | Helper to create constant zero
 constIndex0 loc = Arith.Constant loc AST.IndexType (AST.IntegerAttr AST.IndexType 0)
@@ -664,7 +664,7 @@ transExpr a@(CAssign op lhs rhs node) = do
     let c0 = [Left $ id0 AST.:= constInt (getPos node) AST.IndexType (member ^.non 0)]
         st = Affine.store (getPos node) rhsId id [id0]
         op1 = AST.Do st{AST.opLocation = getPos node}
-    return (srcBs ++ rhsBs ++ c0 ++ [Left op1], ty)
+    return (srcBs ++ rhsBs ++ c0 ++ [Left op1, Right rhsId], ty)
   else do
     (dstTy, sign, tn) <- case ty of
                   (AST.MemRefType _ ty _ _, sign, tn) -> return (ty, sign, tn)
@@ -676,7 +676,7 @@ transExpr a@(CAssign op lhs rhs node) = do
                 ,Left $ id1 AST.:= Affine.load (getPos node) (ty^._1) id [id0]] ++) <$>
                    tryStore (getPos node) rhsId id1 indices member
           else tryStore (getPos node) rhsId id indices member
-    return (srcBs ++ rhsBs ++ st, (dstTy, sign, tn))
+    return (srcBs ++ rhsBs ++ st ++ [Right rhsId], (dstTy, sign, tn))
   where tryStore loc vId dstId indices member = do
           let fIndex:res = indices
           indexBs <- mapM transExpr ((if isn't _Nothing member then
@@ -991,7 +991,8 @@ transExpr c@(CCall (CVar ident _) [src', dst', tag', size] node) | identName ide
     srcInds <- mapM (applyAffineExpr loc ds syms . fst . fromJust) srcIndexAEs
     dstInds <- mapM (applyAffineExpr loc ds syms . fst . fromJust) dstIndexAEs
     tagInds <- mapM (applyAffineExpr loc ds syms . fst . fromJust) tagIndexAEs
-    let dma = AST.Do $ Affine.dmaStart loc (lastId node srcBs) (map (lastId node) srcInds)
+    id <- freshName
+    let dma = id AST.:= Affine.dmaStart loc (lastId node srcBs) (map (lastId node) srcInds)
                                            (lastId node dstBs) (map (lastId node) dstInds)
                                            (lastId node tagBs) (map (lastId node) tagInds)
                                            sizeId
@@ -1003,7 +1004,8 @@ transExpr c@(CCall (CVar ident _) [src', dst', tag', size] node) | identName ide
     srcToIndex <- mapM (uncurry (toIndex loc)) [(lastId node $ id ^._1, id^._2._1)|id <- srcIndBs]
     dstToIndex <- mapM (uncurry (toIndex loc)) [(lastId node $ id ^._1, id^._2._1)|id <- dstIndBs]
     tagToIndex <- mapM (uncurry (toIndex loc)) [(lastId node $ id ^._1, id^._2._1)|id <- tagIndBs]
-    let dma = AST.Do $ MemRef.dmaStart loc (lastId node srcBs) (srcToIndex ^..traverse._2)
+    id <- freshName
+    let dma = id AST.:= MemRef.dmaStart loc (lastId node srcBs) (srcToIndex ^..traverse._2)
                                            (lastId node dstBs) (dstToIndex ^..traverse._2)
                                            (lastId node tagBs) (tagToIndex ^..traverse._2)
                                            sizeId
@@ -1023,14 +1025,15 @@ transExpr c@(CCall (CVar ident _) [tag', size] node) | identName ident == "dma_w
   exprs <- affineExprs <$> getUserState
   (sizeIndBs, sizeId) <- toIndex loc (lastId node sizeBs) sizeTy
   let tagIndexAEs = map (exprToAffineExpr ds syms exprs) tagIndices
+  id <- freshName
   if all (isn't _Nothing) tagIndexAEs then do
     tagInds <- mapM (applyAffineExpr loc ds syms . fst . fromJust) tagIndexAEs
-    let dma = AST.Do $ Affine.dmaWait loc (lastId node tagBs) (map (lastId node) tagInds) sizeId
+    let dma = id AST.:= Affine.dmaWait loc (lastId node tagBs) (map (lastId node) tagInds) sizeId
     return (tagBs++join tagInds++sizeBs++[sizeIndBs, Left dma], (tagTy, tagSign, tagTn))
   else do
     tagIndBs <- mapM transExpr tagIndices
     tagToIndex <- mapM (uncurry (toIndex loc)) [(lastId node $ id ^._1, id^._2._1)|id <- tagIndBs]
-    let dma = AST.Do $ MemRef.dmaWait loc (lastId node tagBs) (tagToIndex ^..traverse._2)
+    let dma = id AST.:= MemRef.dmaWait loc (lastId node tagBs) (tagToIndex ^..traverse._2)
                                            sizeId
     return (tagBs++join (tagIndBs^..traverse._1)++(tagToIndex^..traverse._1)++
             sizeBs++[sizeIndBs, Left dma], (tagTy, tagSign, tagTn))
@@ -1061,7 +1064,7 @@ transExpr c@(CCall (CVar ident _) [v, dst'] node) | identName ident == "vstore" 
   toIndex <- mapM (\(b, (ty, _, _)) -> toIndex loc (lastId node b) ty) indexBs
   (vBs, (vTy, vSign, vTn)) <- transExpr v
   let store = AST.Do $ Vector.vstore loc (lastId node vBs) (lastId node dstBs) (toIndex ^..traverse._2)
-  return (dstBs ++ join (indexBs ^..traverse._1) ++ toIndex ^..traverse._1++ vBs ++ [Left store], (vTy, vSign, vTn))
+  return (dstBs ++ join (indexBs ^..traverse._1) ++ toIndex ^..traverse._1++ vBs ++ [Left store, Right (lastId node vBs)], (vTy, vSign, vTn))
 
 -- translate function call
 transExpr c@(CCall (CVar ident _) args node) = do
@@ -1080,13 +1083,13 @@ transExpr c@(CCall (CVar ident _) args node) = do
     "free" -> do
       when (L.length argsBs /= 1) $ errMsg node "free expected 1 arguments"
       let (mB, (mTy, mSign, mTn)) = head argsBs
-          free = AST.Do $ MemRef.dealloc loc (lastId node mB)
+          free = id AST.:= MemRef.dealloc loc (lastId node mB)
       return (join (argsBs ^..traverse._1) ++ [Left free], (mTy, mSign, mTn))
     "memcpy" -> do
       when (L.length argsBs /= 2) $ errMsg node "memcpy expected 2 arguments"
       let (dstB, (dstTy, dstSign, dstTn)) = head argsBs
           (srcB, (srcTy, srcSign, srcTn)) = argsBs !! 1
-          copy = AST.Do $ MemRef.copy loc (lastId node srcB) (lastId node dstB)
+          copy = id AST.:= MemRef.copy loc (lastId node srcB) (lastId node dstB)
       return (join (argsBs ^..traverse._1) ++ [Left copy], (dstTy, dstSign, dstTn))
 
     -- convolution
@@ -1173,6 +1176,7 @@ transExpr c@(CCall (CVar ident _) args node) = do
                        AST.MemRefType{} -> True
                        _ -> False) (argsBs ^..traverse._2._1)) $
                 errMsg node $ name ++ " expected array as arguments"
+          id <- freshName
           id0 <- freshName
           id1 <- freshName
           id2 <- freshName
@@ -1190,7 +1194,7 @@ transExpr c@(CCall (CVar ident _) args node) = do
             transExpr (CBinary CAddOp (CVar (Ident outputN (read outputN) node) node)
                                (CBinary CMulOp (CVar (Ident lhsN (read lhsN) node) node)
                                                (CVar (Ident rhsN (read rhsN) node) node) node) node)
-          let ast = AST.Do $ op loc (lastId node lhsB) (lastId node rhsB) (lastId node outputB) attrs
+          let ast = id AST.:= op loc (lastId node lhsB) (lastId node rhsB) (lastId node outputB) attrs
                                  (AST.Block id0 [(id1, AST.memrefTypeElement lhsTy),
                                                  (id2, AST.memrefTypeElement rhsTy),
                                                  (id3, AST.memrefTypeElement outputTy)]
