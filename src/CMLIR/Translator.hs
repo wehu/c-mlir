@@ -1531,8 +1531,9 @@ type_ pos ms ty@(DirectType name quals attrs) = do
     _ -> errMsg pos $ "unsupported: " ++ show ty
 type_ pos ms ty@(PtrType t quals attrs) = do
   (tt, sign, tn) <- type_ pos ms t
-  return (if tt == AST.NoneType then AST.IntegerType AST.Signless 8
-          else AST.MemRefType [Nothing] tt Nothing (Just $ AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms), sign, tn)
+  return (AST.MemRefType [Nothing]
+            (if tt == AST.NoneType then AST.IntegerType AST.Signless 8
+             else tt) Nothing (Just $ AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms), sign, tn)
 type_ pos ms (ArrayType t size quals attrs) = do
   s <- arraySize pos size
   let msAttr = AST.IntegerAttr (AST.IntegerType AST.Signless 64) ms
