@@ -561,7 +561,9 @@ transStmt (CFor init cond post body node) = underScope $ do
              Right decl -> transBlockItem (CBlockDecl decl)
   condBs <- case cond of
              Just e -> (^._1) <$> transExpr e
-             Nothing -> return []
+             Nothing -> do
+               id <- freshName
+               return [Left $ id AST.:= constInt loc (AST.IntegerType AST.Signless 1) 1]
   postBs <- case post of
              Just e -> (^._1) <$> transExpr e
              Nothing -> return []
